@@ -128,3 +128,35 @@ console.log("BOT AUTO-ROLL + RESOURCE PRODUCTION TESTS PASSED");
   if(shared) throw new Error("Merged port generator produced touching ports");
 }
 console.log("CATAN BOT MERGE TEST PASSED — distributed coastal port placement");
+
+// Robber regression: the acting player can never be the victim; only a player
+// actually touching the robber's destination may lose a card.
+{
+  const rb=Array.from({length:19},(_,i)=>({resource:"wood",number:8,robber:i===0}));
+  const thief=L.newPlayer(1,"Thief",false,"Human");
+  const victim=L.newPlayer(2,"Victim",false,"Human");
+  const other=L.newPlayer(3,"Other",false,"Human");
+  const g=L.makeGeometry(), touch=g.vertexTiles[0][0];
+  thief.hand={wood:1,brick:0,sheep:0,wheat:0,ore:0};
+  victim.settlements=[touch];victim.hand={wood:2,brick:0,sheep:0,wheat:0,ore:0};
+  other.hand={wood:5,brick:0,sheep:0,wheat:0,ore:0};
+  const rr=L.resolveRobberSteal([thief,victim,other],rb,g,1,0,()=>0);
+  if(!rr.valid||rr.victim?.id!==2||rr.stolen!=="wood")throw new Error("Robber selected an invalid victim");
+  if(rr.players.find(p=>p.id===1).hand.wood!==2)throw new Error("Robber did not give the stolen card to the acting player");
+  if(rr.players.find(p=>p.id===2).hand.wood!==1)throw new Error("Robber did not remove the card from the blocked player");
+  if(rr.players.find(p=>p.id===3).hand.wood!==5)throw new Error("Robber altered an unrelated player's hand");
+}
+console.log("ROBBER VICTIM REGRESSION PASSED — steal source is constrained to the robber destination");
+
+// Strategic trade-offer regression: a bot should generate an offer when it can
+// immediately improve a build objective by obtaining a missing resource.
+{
+  const b=L.makeBoard(geo,{highPipsTouch:true}),ports=L.makePorts(geo);
+  const bot=L.newPlayer(0,"Bot",true,"Impossible"),human=L.newPlayer(1,"You",false,"Human");
+  bot.hand={wood:3,brick:1,sheep:0,wheat:2,ore:2};
+  human.hand={wood:0,brick:0,sheep:2,wheat:0,ore:0};
+  bot.settlements=[0];
+  const offers=L.strategicTradeCandidates(bot,[bot,human],b,geo,ports,L.emptyBank(),10);
+  if(!offers.some(a=>a.type==="playerTrade"&&a.partner===human.id&&a.getBundle?.sheep))throw new Error("Bot failed to generate an objective-driven sheep trade offer");
+}
+console.log("STRATEGIC BOT TRADE REGRESSION PASSED — offers are generated around immediate build objectives");

@@ -3517,3 +3517,13 @@ button,select,input{font-family:inherit}
 .engineOddsRow span{display:flex;align-items:center;gap:8px}.engineOddsRow small{opacity:.48;margin-left:2px}.engineAnalysisChecks{margin-top:10px}.engineCheckRow{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:10px}.engineCheckRow:last-child{border-bottom:0}.engineCheckRow b.ok{color:#77ffb1}
 @media(max-width:1100px){.colonistTradeBody,.colonistTradeColumns{grid-template-columns:minmax(0,1fr)}.colonistTradeCenter,.colonistPlayerTradeCenter{order:2;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center}.colonistTradeCenter .colonistTradeSummary,.colonistPlayerTradeCenter .colonistOfferTotals{grid-column:2}.colonistTradeCenter .colonistTradeConfirm,.colonistPlayerTradeCenter .colonistTradeConfirm{grid-column:3}.engineAnalysisLayout{grid-template-columns:1fr;height:auto}.engineAnalysisBoardFrame{min-height:560px}.engineAnalysisSide{overflow:visible}}
 @media(max-width:760px){.colonistTradeHeader{align-items:flex-start;flex-direction:column}.colonistTradeTabs{width:100%}.colonistTradeTabs button{flex:1}.colonistResourceGrid,.colonistBundleCards{grid-template-columns:repeat(2,minmax(0,1fr))}.engineAnalysisHero{flex-direction:column}.engineAnalysisHeroStats{grid-template-columns:repeat(3,1fr)}}
+/* Match the published Colonist trade flow more closely: the exchange arrows sit on
+   the left edge of the center lane, with the offer summary/actions beside them. */
+@media(min-width:1101px){
+  .colonistTradeCenter,.colonistPlayerTradeCenter{display:grid;grid-template-columns:40px minmax(0,1fr);grid-template-rows:auto auto auto;align-items:center;justify-items:center}
+  .colonistTradeCenter .tradeArrow,.colonistPlayerTradeCenter .tradeArrow{grid-column:1}
+  .colonistTradeCenter .tradeArrow.up,.colonistPlayerTradeCenter .tradeArrow.up{grid-row:1}
+  .colonistTradeCenter .tradeArrow.down,.colonistPlayerTradeCenter .tradeArrow.down{grid-row:2}
+  .colonistTradeCenter .colonistTradeSummary,.colonistPlayerTradeCenter .colonistOfferTotals{grid-column:2;grid-row:1/3}
+  .colonistTradeCenter .colonistTradeConfirm,.colonistPlayerTradeCenter .colonistTradeConfirm{grid-column:2;grid-row:3}
+}

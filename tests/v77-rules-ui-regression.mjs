@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 const main=fs.readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
 
-assert.match(main,/function rollOfficialDice()/,'official fair dice helper missing');
+assert.match(main,/function rollOfficialDice\(\)/,'official fair dice helper missing');
 assert.ok(!main.includes('createBalancedDiceController'),'player-aware balanced dice controller must be removed');
 assert.ok(!main.includes('balancedDiceRef'),'balanced dice runtime state must be removed');
-assert.match(main,/const pair=rollOfficialDice();/,'bot must use the same official dice as the human');
-assert.match(main,/return [1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];/,'dice must be two independent d6 rolls');
+assert.match(main,/const pair=rollOfficialDice\(\);/,'bot must use the same official dice as the human');
+assert.match(main,/return \[1\+Math\.floor\(Math\.random\(\)\*6\),1\+Math\.floor\(Math\.random\(\)\*6\)\];/,'dice must be two independent d6 rolls');
 
 assert.match(main,/randomHeldResource(victim)/,'robber theft must use a single random held resource');
 assert.match(main,/const stolen=randomHeldResource(victim)/,'robber execution must not choose a strategically selected resource');

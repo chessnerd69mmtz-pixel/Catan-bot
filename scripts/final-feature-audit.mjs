@@ -55,7 +55,7 @@ const v68Must = [
   ['road building done control','DONE ROAD BUILDING'],
   ['bot planner deadline road guard','deadline-90'],
   ['lazy board analysis','if(!analysisMode||!board||!active)return[]'],
-  ['cached trade card utility','cachedCardUtility'],
+  ['cached trade card utility','fastCardExpectedUtility'],
   ['reduced autoplay trade generation','const autoplay=!!turnState.botAutoplay'],
 ];
 for (const [label, needle] of v68Must) assert.ok(main.includes(needle), `${label}: missing '${needle}'`);

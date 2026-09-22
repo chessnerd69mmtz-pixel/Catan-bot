@@ -10,12 +10,12 @@ assert.ok(!main.includes('balancedDiceRef'),'balanced dice runtime state must be
 assert.match(main,/const pair=rollOfficialDice\(\);/,'bot must use the same official dice as the human');
 assert.match(main,/return \[1\+Math\.floor\(Math\.random\(\)\*6\),1\+Math\.floor\(Math\.random\(\)\*6\)\];/,'dice must be two independent d6 rolls');
 
-assert.match(main,/randomHeldResource(victim)/,'robber theft must use a single random held resource');
-assert.match(main,/const stolen=randomHeldResource(victim)/,'robber execution must not choose a strategically selected resource');
+assert.match(main,/randomHeldResource\(victim\)/,'robber theft must use a single random held resource');
+assert.match(main,/const stolen=randomHeldResource\(victim\)/,'robber execution must not choose a strategically selected resource');
 
 assert.match(main,/sixEightBonus=/,'placement has a 6/8 combination bonus');
 assert.match(main,/oreWheatBonus=/,'placement has an ore+wheat synergy bonus');
-assert.match(main,/rawPips*1.08/,'production weight has been increased slightly');
+assert.match(main,/rawPips\*1\.08/,'production weight has been increased slightly');
 
 assert.match(main,/colonistTradeHub/,'Colonist-style trade hub UI is present');
 assert.match(main,/tradeHubTab/,'trade hub has bank/player tabs');

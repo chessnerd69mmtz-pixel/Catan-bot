@@ -1043,13 +1043,52 @@ function engineWinLikelihood(players,board,geo,ports,bank,targetVP){
   return players.map((p,i)=>({id:p.id,name:p.name,value:raw[i],prob:weights[i]/totalW}));
 }
 
+function engineActionBreakdown(action,{active,players,board,geo,ports,bank,deck,targetVP,heldAwards}){
+  if(!action)return [];
+  const rows=[];
+  if(action.type==="settlement"){
+    const sp=spotProduction(action.spot,board,geo),pips=RES.reduce((n,r)=>n+sp[r]*36,0),nums=(geo.vertexTiles[action.spot]||[]).map(tid=>board[tid]?.number).filter(Number.isFinite);
+    const high=nums.filter(n=>n===6||n===8).length,ore=(sp.ore||0)*36,wheat=(sp.wheat||0)*36,port=portAt(action.spot,ports);
+    rows.push({label:"Production",value:pips.toFixed(1)+" pips",tone:pips>=10?"up":pips>=7?"flat":"down"});
+    rows.push({label:"Diversity",value:RES.filter(r=>sp[r]>0).length+"/5",tone:RES.filter(r=>sp[r]>0).length>=4?"up":"flat"});
+    rows.push({label:"6 / 8",value:high?high+" token(s)":"none",tone:high>=2?"up":high===1?"flat":"down"});
+    rows.push({label:"Ore + Wheat",value:ore.toFixed(1)+" + "+wheat.toFixed(1),tone:ore>=4&&wheat>=4?"up":"flat"});
+    if(port)rows.push({label:"Port",value:port.type,tone:"up"});
+    const contest=opponentTakeProbability(action.spot,active,players,board,geo,ports,bank,targetVP,botModeConfig(players,targetVP));
+    rows.push({label:"Contest risk",value:Math.round(contest*100)+"%",tone:contest>.65?"down":contest>.3?"flat":"up"});
+  }else if(action.type==="city"){
+    const sp=spotProduction(action.spot,board,geo),pips=RES.reduce((n,r)=>n+sp[r]*36,0);
+    rows.push({label:"Immediate VP",value:"+1 VP",tone:"up"});
+    rows.push({label:"Production doubled",value:pips.toFixed(1)+" pips",tone:pips>=8?"up":"flat"});
+  }else if(action.type==="road"){
+    const potential=roadActionPotential(action.spot,active,players,board,geo,targetVP,ports,bank),e=geo.edges[action.spot];
+    const future=[e?.a,e?.b].flatMap(v=>v==null?[]:(geo.neighbors[v]||[])).filter(v=>legalSettlement(v,players,geo)).length;
+    rows.push({label:"Network value",value:potential.toFixed(2),tone:potential>12?"up":"flat"});
+    rows.push({label:"Future access",value:String(future),tone:future>=2?"up":"flat"});
+  }else if(action.type==="trade"||action.type==="playerTrade"){
+    const value=fastTradeOpportunity(action,active,players,board,geo,ports,bank,deck,targetVP,heldAwards,null,{});
+    rows.push({label:"Trade value",value:Number.isFinite(value)?value.toFixed(2):"—",tone:value>20?"up":value>5?"flat":"down"});
+    rows.push({label:"Give",value:action.type==="trade"?action.rate+":1 "+LABEL[action.give]:bundleText(action.giveBundle||{[action.give]:action.giveAmount}),tone:"flat"});
+    rows.push({label:"Receive",value:action.type==="trade"?LABEL[action.get]:bundleText(action.getBundle||{[action.get]:action.getAmount}),tone:"up"});
+  }else if(action.type==="buyDev"){
+    const value=cardExpectedUtility(active,players,board,geo,ports,bank,deck,targetVP,botModeConfig(players,targetVP));
+    rows.push({label:"Card utility",value:Number.isFinite(value)?value.toFixed(2):"—",tone:value>8?"up":value>3?"flat":"down"});
+    rows.push({label:"Deck remaining",value:String(deck?.length||0),tone:"flat"});
+  }else if(action.type==="play"){
+    rows.push({label:"Development",value:action.card,tone:"up"});
+    if(action.card==="Knight")rows.push({label:"Robber impact",value:"Block + one random physical card",tone:"flat"});
+    if(action.card==="Road Building")rows.push({label:"Road search",value:"Up to 2 legal roads",tone:"up"});
+    if(action.card==="Year of Plenty")rows.push({label:"Resource selection",value:"2 bank cards",tone:"up"});
+    if(action.card==="Monopoly")rows.push({label:"Targeting",value:"Collect all of one type",tone:"up"});
+  }
+  return rows;
+}
 function engineRecommendations({active,players,board,geo,ports,bank,deck,targetVP,heldAwards,stage}){
   if(!active)return [];
-  if(stage==="preRoll")return [{type:"roll",score:100,display:"Roll the dice — this is the mandatory start-of-turn action."}];
-  const scored=scoreActions(active,players,board,geo,ports,bank,deck,targetVP,heldAwards,{devBought:false,devPlayed:false})
-    .filter(a=>a.type!=="pass"&&Number.isFinite(a.score));
+  if(stage==="preRoll")return [{type:"roll",score:100,display:"Roll the dice — this is the mandatory start-of-turn action.",breakdown:[{label:"Turn rule",value:"Roll required",tone:"up"}]}];
+  const scored=scoreActions(active,players,board,geo,ports,bank,deck,targetVP,heldAwards,{devBought:false,devPlayed:false}).filter(a=>a.type!=="pass"&&Number.isFinite(a.score));
   const seen=new Set();
-  return scored.filter(a=>{const k=decisionKeyForEngine(a);if(seen.has(k))return false;seen.add(k);return true;}).slice(0,3).map((a,i)=>({...a,rank:i+1,display:engineActionText(a,players)}));
+  return scored.filter(a=>{const k=decisionKeyForEngine(a);if(seen.has(k))return false;seen.add(k);return true;}).slice(0,3).map((a,i)=>({...a,rank:i+1,display:engineActionText(a,players),breakdown:engineActionBreakdown(a,{active,players,board,geo,ports,bank,deck,targetVP,heldAwards})}));
 }
 function botEngineAnalysis({active,players,board,geo,ports,bank,deck,targetVP,heldAwards,stage="action",memorySnapshots=[]}){
   if(!active)return {odds:[],botProb:.5,recommendations:[],scored:[],analysisMs:0};
@@ -3024,8 +3063,27 @@ function App(){
     const activeEngine=enginePlayers[engineActive]||enginePlayers[0];
     const recs=engineRecommendations({active:activeEngine,players:enginePlayers,board:engineBoard,geo,ports:enginePorts,bank:engineBank,deck:engineDeck,targetVP:engineTargetVP,heldAwards:engineHeldAwards,stage:engineStage});
     const odds=engineWinLikelihood(enginePlayers,engineBoard,geo,enginePorts,engineBank,engineTargetVP);
-    return <div className="app engineApp engineAnalysisPage"><header className="topbar"><div className="brand"><div className="logo">H</div><div><h1>MONOPOLY</h1><small>CATAN ENGINE · POSITION ANALYSIS</small></div></div><div className="setupNav"><button className="homeNav" onClick={()=>setScreen("engineSetup")}>← EDIT POSITION</button><div className="turnpill">ENGINE ANALYSIS</div></div></header><main className="engineAnalysisLayout"><section className="engineAnalysisBoard"><div className="boardHead"><div><span className="eyebrow">ENGINE VIEW</span><h2>{activeEngine.name} TO MOVE</h2><p>Scores and recommendations are engine-only. They are intentionally hidden during normal setup and gameplay.</p></div><button className="enginePrimary small" onClick={()=>setScreen("engineSetup")}>EDIT BOARD</button></div><Board geo={geo} board={engineBoard} players={enginePlayers} ports={enginePorts} selectedV={null} selectedE={null} analysisMode={true} showPlacementScores={true} boardAnalysis={recs.filter(a=>a.type==="settlement").map(a=>({v:a.spot,score:a.score,legal:true}))}/></section><aside className="engineAnalysisSide"><section className="engineCard engineTopMoves"><div className="engineCardTitle">CATAN ENGINE · TOP 3 MOVES</div>{recs.length?recs.map((r,i)=><div className={`engineMove ${i===0?"best":""}`} key={`${r.type}-${r.spot??r.card??r.give??i}`}><div className="engineMoveRank">{i+1}</div><div className="engineMoveBody"><b>{r.display}</b><small>{r.type==="settlement"?`Intersection ${r.spot} · placement evaluation`:r.type==="road"?`Road edge ${r.spot}`:`Strategic action`}</small></div><strong>{Number.isFinite(r.score)?r.score.toFixed(2):"—"}</strong></div>):<div className="engineEmpty">No legal scored action. Set the hand/resources or switch to the action phase.</div>}</section><section className="engineCard"><div className="engineCardTitle">WIN LIKELIHOOD</div><div className="engineOddsBar">{odds.map(o=><div key={o.id} style={{width:`${Math.max(4,o.prob*100)}%`,background:enginePlayers.find(p=>p.id===o.id)?.color}} title={`${o.name}: ${(o.prob*100).toFixed(1)}%`}/>)}</div>{odds.map(o=><div className="engineOddsRow" key={o.id}><span><i style={{background:enginePlayers.find(p=>p.id===o.id)?.color}}></i>{o.name}</span><b>{(o.prob*100).toFixed(1)}%</b></div>)}<small className="engineDisclaimer">Heuristic position estimate, not a guarantee or a simulation probability.</small></section><section className="engineCard"><div className="engineCardTitle">POSITION SUMMARY</div><div className="engineSummaryGrid">{enginePlayers.map(p=><div key={p.id}><b>{p.name}</b><span>{p.vp} VP · {total(p.hand)} cards</span><span>{botProduction(p,engineBoard,geo) && RES.reduce((a,r)=>a+botProduction(p,engineBoard,geo)[r],0).toFixed(2)} expected resource / roll</span></div>)}</div></section></aside></main></div>;
-  }
+    const topScore=recs[0]?.score||0;
+    const placementScores=recs.filter(a=>a.type==="settlement").map(a=>Number(a.score)||0);
+    const maxPlacement=placementScores.length?Math.max(...placementScores):0;
+    const minPlacement=placementScores.length?Math.min(...placementScores):0;
+    return <div className="app engineApp engineAnalysisPage">
+      <header className="topbar"><div className="brand"><div className="logo">H</div><div><h1>MONOPOLY</h1><small>CATAN ENGINE · POSITION ANALYSIS</small></div></div><div className="setupNav"><button className="homeNav" onClick={()=>setScreen("engineSetup")}>← EDIT POSITION</button><div className="turnpill">ENGINE ANALYSIS</div></div></header>
+      <main className="engineAnalysisLayout">
+        <section className="engineAnalysisBoard">
+          <div className="engineAnalysisHero"><div><span className="eyebrow">ENGINE VIEW</span><h2>{activeEngine.name} TO MOVE</h2><p>Legal moves are ranked from the current position. Scores explain the engine evaluation; they are not guaranteed outcomes.</p></div><div className="engineAnalysisHeroStats"><span><b>{engineStage==="preRoll"?"PRE-ROLL":"ACTION PHASE"}</b><small>STAGE</small></span><span><b>{recs.length}</b><small>TOP MOVES</small></span><span><b>{Number(topScore).toFixed(1)}</b><small>TOP SCORE</small></span></div></div>
+          <div className="engineAnalysisLegend"><span><i className="scoreHot"/> high-value placement</span><span><i className="scoreWarm"/> viable placement</span><span><i className="scoreCool"/> lower-value placement</span>{placementScores.length>0&&<em>placement range {minPlacement.toFixed(1)} → {maxPlacement.toFixed(1)}</em>}</div>
+          <div className="engineAnalysisBoardFrame"><Board geo={geo} board={engineBoard} players={enginePlayers} ports={enginePorts} selectedV={null} selectedE={null} analysisMode={true} showPlacementScores={true} boardAnalysis={recs.filter(a=>a.type==="settlement").map(a=>({v:a.spot,score:a.score,legal:true}))}/></div>
+          <div className="engineAnalysisFootnote"><span>Tip</span><p>Use the edit screen to change the board, hands, awards or turn stage, then return here for a fresh evaluation.</p></div>
+        </section>
+        <aside className="engineAnalysisSide">
+          <section className="engineCard engineTopMoves"><div className="engineCardTitle">CATAN ENGINE · TOP 3 MOVES</div>{recs.length?recs.map((r,i)=><article className={`engineMoveCard ${i===0?"best":""}`} key={`${r.type}-${r.spot??r.card??r.give??i}`}><div className="engineMoveHeader"><div className="engineMoveRank">{i+1}</div><div><b>{r.display}</b><small>{r.type==="settlement"?`Intersection ${r.spot} · placement evaluation`:r.type==="road"?`Road edge ${r.spot}`:"Strategic action"}</small></div><strong>{Number.isFinite(r.score)?r.score.toFixed(2):"—"}</strong></div><div className="engineBreakdown">{(r.breakdown||[]).map((b,j)=><div key={j}><span>{b.label}</span><b className={`tone-${b.tone||"flat"}`}>{b.value}</b></div>)}</div></article>):<div className="engineEmpty">No legal scored action. Adjust the position or switch to the action phase.</div>}</section>
+          <section className="engineCard"><div className="engineCardTitle">WIN LIKELIHOOD</div><div className="engineOddsBar">{odds.map(o=><div key={o.id} style={{width:`${Math.max(4,o.prob*100)}%`,background:enginePlayers.find(p=>p.id===o.id)?.color}} title={`${o.name}: ${(o.prob*100).toFixed(1)}%`}/>)}</div>{odds.map(o=><div className="engineOddsRow" key={o.id}><span><i style={{background:enginePlayers.find(p=>p.id===o.id)?.color}}></i>{o.name}<small>strength {o.value.toFixed(1)}</small></span><b>{(o.prob*100).toFixed(1)}%</b></div>)}<small className="engineDisclaimer">Heuristic position estimate — useful for comparing positions, not a simulation probability or guarantee.</small></section>
+          <section className="engineCard"><div className="engineCardTitle">POSITION SUMMARY</div><div className="engineSummaryGrid">{enginePlayers.map(p=>{const pp=botProduction(p,engineBoard,geo),totalProd=RES.reduce((a,r)=>a+pp[r],0),aw=awards(enginePlayers,geo,engineHeldAwards),awardVP=(aw.roadOwner===p.id?2:0)+(aw.armyOwner===p.id?2:0);return <div key={p.id}><b>{p.name}</b><span>{p.vp+awardVP} visible VP · {total(p.hand)} cards</span><span>{totalProd.toFixed(2)} expected resource / roll</span><span>{p.settlements.length} settlements · {p.cities.length} cities · {p.roads.length} roads</span></div>})}</div></section>
+          <section className="engineCard engineAnalysisChecks"><div className="engineCardTitle">ENGINE CHECKS</div><div className="engineCheckRow"><span>Position data</span><b className="ok">VALID</b></div><div className="engineCheckRow"><span>Legal move search</span><b className="ok">{recs.length?"ACTIVE":"NONE"}</b></div><div className="engineCheckRow"><span>Board scoring overlay</span><b className="ok">{placementScores.length?"ACTIVE":"READY"}</b></div><div className="engineCheckRow"><span>Stage</span><b>{engineStage==="preRoll"?"ROLL REQUIRED":"ACTION"}</b></div></section>
+        </aside>
+      </main>
+    </div>;
 
   if(screen==="setupBoard"&&board) return <div className={`app setupBoardApp ${isPVBot ? "mode1v1" : "mode4p"}`}><header className="topbar"><div className="brand"><div className="logo">H</div><div><h1>MONOPOLY</h1><small>OPENING SETUP</small></div></div><div className="turnpill">{currentSetupPlayer?.bot?`${currentSetupPlayer.name.toUpperCase()} · AI THINKING`:`${currentSetupPlayer?.name?.toUpperCase()||"PLAYER"} · YOUR SETUP`}<small className="setupTimerBadge">{currentSetupPlayer?.bot?"INSTANT":`${String(Math.floor(turnSecondsLeft/60)).padStart(2,"0")}:${String(turnSecondsLeft%60).padStart(2,"0")}`} · 45s + 30s/action</small></div></header><main className="setupBoardPage"><section className="boardPanel"><div className="boardHead"><div><span className="eyebrow">OPENING PLACEMENT</span><h2>{currentSetupPlayer?.bot?`${currentSetupPlayer.name} IS CHOOSING`:`${currentSetupPlayer?.name||"Player"}'S TURN TO PLACE`}</h2><p>{currentSetupPlayer?.bot?`${currentSetupPlayer.diff} bot uses the shared strategy engine with difficulty-specific search/noise and memory settings.`:`Click an empty intersection, then click one of its connected coastal or inland edges to place your settlement and road.`}</p></div><div className="setupCounter">ROUND {setupRound} · {setupIndex+1}/{players.length}</div></div><Board geo={geo} board={board} players={players} ports={ports} selectedV={selectedV} selectedE={selectedE}
           placementMode="setup" placementPlayer={currentSetupPlayer} showPlacementScores={false}

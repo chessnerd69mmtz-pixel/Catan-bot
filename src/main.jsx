@@ -31,6 +31,10 @@ function canBuyDevelopmentCard(p,deck){return !!deck?.length&&canPay(p?.hand||em
 const TURN_BASE_SECONDS=45;
 const ACTION_TIME_BONUS_SECONDS=30;
 const BOT_MAX_TURN_MS=4500;
+const BOT_DEEP_SEARCH_RESERVE_MS=260;
+const BOT_DEEP_ACTION_LIMIT=32;
+const BOT_OPENING_CANDIDATES=24;
+const BOT_OPENING_PAIR_BUDGET_MS=320;
 const BOT_HARD_STOP_MS=4800;
 const BOT_HAND_PRESSURE_THRESHOLD=9;
 const BOT_HAND_PRESSURE_BASE=8;
@@ -316,7 +320,7 @@ function resolveDiceRoll(players,board,geo,sum,bank){
   return {...out,seven:false};
 }
 function cardProbabilities(deck){const counts=Object.fromEntries(Object.keys(DEV).map(c=>[c,0]));deck.forEach(c=>counts[c]++);const remaining=deck.length;return Object.fromEntries(Object.keys(DEV).map(c=>{const count=counts[c],prob=remaining?count/remaining:0,draws=Math.min(3,remaining);let miss=1;for(let i=0;i<draws;i++)miss*=Math.max(0,remaining-count-i)/Math.max(1,remaining-i);return[c,{count,prob,within3:1-miss}]}));}
-const BOT_ENGINE_VERSION="v28-duel-race-and-4p-stability-planner";
+const BOT_ENGINE_VERSION="v29-semi-perfect-low-latency-planner";
 const BOT_MODE_CONFIGS={
   standard4p10:{
     key:"standard4p10",targetVP:10,leaderMultiplier:2.0,gameLengthFactor:1.0,beta:0.32,bankScarcity:1,
@@ -338,6 +342,15 @@ const BOT_MODE_CONFIGS={
 
 function botModeConfig(players,targetVP){return players.length===2?BOT_MODE_CONFIGS.pvbot1v115:BOT_MODE_CONFIGS.standard4p10;}
 function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
+let ACTIVE_BOT_CACHE=null;
+function botPlanningFingerprint(p,plan=null){
+  const h=RES.map(r=>p?.hand?.[r]||0).join(',');
+  return `${p?.id}|${h}|${(p?.settlements||[]).join(',')}|${(p?.cities||[]).join(',')}|${(p?.roads||[]).join(',')}|${p?.vp||0}|${plan?.type||''}|${plan?.target??''}|${(plan?.path||[]).join(',')}`;
+}
+function createBotPlanningCache(){
+  return {need:new Map(),spot:new Map(),future:new Map(),threats:new Map(),opponentRanks:new Map(),road:new Map(),placement:new Map(),city:new Map(),boardScarcity:new Map(),openedAt:(typeof performance!=="undefined"&&performance.now?performance.now():Date.now())};
+}
+function resetBotPlanningCache(){ACTIVE_BOT_CACHE=null;}
 function expectedTurnsToCombo(hand,production,cost){
   let t=0;
   for(const [r,n] of Object.entries(cost||{})){
@@ -774,11 +787,23 @@ function cardExpectedUtility(p,players,board,geo,ports,bank,deck,targetVP,cfg,tu
 }
 
 function fastCardExpectedUtility(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={},cache=null){
-  const probs=cardProbabilities(deck),gap=Math.max(0,targetVP-openVictoryPoints(p,players,geo,heldAwards)),cfg=botModeConfig(players,targetVP);
-  const y=bestYearOfPlentyPair(p,players,board,geo,ports,bank,deck,targetVP,cfg,turnState),m=bestMonopolyTarget(p,players,board,geo,ports,bank,targetVP,deck,turnState),rb=bestRoadBuildingPair(p,players,board,geo,ports,bank,targetVP,turnState?.deadline||null,turnState?.strategicPlan||null);
-  const knightUtility=gap<=2?4.4:(p.development?.playedKnights>=2?3.8:2.0),rbUtility=Math.min(14,(rb?.value||0)*.18),yopUtility=Math.min(14,(y?.value||0)*.25);
-  const monopolyNeed=m?.resource?(NeedProfile(p,players,board,geo,bank,cfg).need[m.resource]||1):1,monopolyUtility=Math.min(16,(m?.expectedGain||0)*(1.7+monopolyNeed));
-  const vpUtility=gap<=2?8:1,army=(heldAwards?.armyOwner===p.id?2:0)+(p.development?.playedKnights>=2?5:0);
+  const probs=cardProbabilities(deck),gap=Math.max(0,targetVP-openVictoryPoints(p,players,geo,heldAwards)),plan=turnState.strategicPlan||null;
+  const missing=plan?.missing||empty();
+  const missingTotal=plan?.totalMissing||Object.values(missing).reduce((a,b)=>a+b,0);
+  const rbUtility=plan?.type==='settlement'?(plan.path?.length?10:4):2.5;
+  const yopUtility=missingTotal>0?Math.min(12,5+missingTotal*1.5):2.0;
+  const memory=turnState.memorySnapshots||[];
+  let monopolyGain=0;
+  if(memory.length){
+    const latest=memory[memory.length-1]?.players||[];
+    for(const opp of latest){if(opp.id===p.id)continue;monopolyGain=Math.max(monopolyGain,...RES.map(r=>opp.hand?.[r]||0));}
+  }else{
+    monopolyGain=Math.max(...RES.map(r=>players.filter(x=>x.id!==p.id).reduce((n,o)=>n+Math.min(3,publicCardCount(o)/5),0)));
+  }
+  const monopolyUtility=Math.min(10,monopolyGain*(1.4+(plan?.type==='settlement'?1.2:0)));
+  const knightUtility=gap<=2?4.4:(p.development?.playedKnights>=2?3.8:2.0);
+  const vpUtility=gap<=2?8:1;
+  const army=(heldAwards?.armyOwner===p.id?2:0)+(p.development?.playedKnights>=2?5:0);
   return(probs.Knight?.prob||0)*knightUtility+(probs["Road Building"]?.prob||0)*rbUtility+(probs["Year of Plenty"]?.prob||0)*yopUtility+(probs.Monopoly?.prob||0)*monopolyUtility+(probs["Victory Point"]?.prob||0)*vpUtility+army;
 }
 function botRacePressure(p,players,geo,targetVP,heldAwards={}){
@@ -856,12 +881,7 @@ function tradeEnablerValue(action,p,players,board,geo,ports,bank,deck,targetVP,h
   return best*0.55-opponentPenalty;
 }
 function makeScoreCache(players,board,geo,ports,bank,targetVP){
-  const modeCfg=botModeConfig(players,targetVP),legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,players,geo)),spots=new Map();
-  for(const pl of players)for(const v of legal)spots.set(`${pl.id}:${v}`,quickSpotValue(v,pl,players,board,geo,ports,bank,targetVP,modeCfg));
-  const ranks=new Map();
-  for(const pl of players){const vals=legal.map(v=>({v,score:spots.get(`${pl.id}:${v}`)||0})).sort((a,b)=>b.score-a.score);ranks.set(pl.id,new Map(vals.map((x,i)=>[x.v,i])));}
-  // Future expansion and opponent threats are lazy; eager graph walks here were a major source of UI stalls.
-  return{legal,spots,ranks,future:new Map(),threats:new Map(),modeCfg};
+  return{legal:null,spots:new Map(),ranks:new Map(),future:new Map(),threats:new Map(),modeCfg:botModeConfig(players,targetVP)};
 }
 function memoryResourcePressure(memorySnapshots,oppId){
   const pressure=Object.fromEntries(RES.map(r=>[r,0]));
@@ -1100,6 +1120,17 @@ function terrainAvailablePipsByResource(board,players,geo){
   return out;
 }
 function BoardScarcity(r,board,players,geo,modeCfg){
+  if(ACTIVE_BOT_CACHE){
+    const occ=players.map(pl=>`${pl.id}:${[...(pl.settlements||[]),...(pl.cities||[])].sort((a,b)=>a-b).join(',')}`).join('|');
+    const key=`${r}|${occ}`;
+    if(ACTIVE_BOT_CACHE.boardScarcity.has(key))return ACTIVE_BOT_CACHE.boardScarcity.get(key);
+    const totalBoard=boardPipProfile(board)[r]||0;
+    const available=terrainAvailablePipsByResource(board,players,geo)[r]||0;
+    const ratio=available/Math.max(totalBoard,.0001);
+    const value=clamp(1.75-ratio,.55,1.9);
+    ACTIVE_BOT_CACHE.boardScarcity.set(key,value);
+    return value;
+  }
   const totalBoard=boardPipProfile(board)[r]||0;
   const available=terrainAvailablePipsByResource(board,players,geo)[r]||0;
   const ratio=available/Math.max(totalBoard,.0001);
@@ -1161,16 +1192,28 @@ function BuildingDemand(p,modeCfg=null,strategicPlan=null){
   return demand;
 }
 function NeedProfile(p,players,board,geo,bank,modeCfg,strategicPlan=null){
+  if(ACTIVE_BOT_CACHE){
+    const key=botPlanningFingerprint(p,strategicPlan)+`|${modeCfg?.key||''}`;
+    const hit=ACTIVE_BOT_CACHE.need.get(key);
+    if(hit)return hit;
+    const prod=botProduction(p,board,geo),raw=empty(),need=empty(),demand=BuildingDemand(p,modeCfg,strategicPlan);
+    const timeBoost=strategicPlan?.estimatedTurns?clamp(2.0/Math.max(1,strategicPlan.estimatedTurns),.05,.70):0;
+    RES.forEach(r=>{
+      const ps=PersonalScarcity(r,prod),bs=BoardScarcity(r,board,players,geo,modeCfg),gap=RelativeGap(r,p,players,board,geo);
+      const planMissing=strategicPlan?.missing?.[r]||0;
+      const objectiveBoost=planMissing>0?1+timeBoost*Math.min(3,planMissing):1;
+      raw[r]=demand[r]*ps*bs*(1+Math.max(0,-gap))*modeCfg.bankScarcity*objectiveBoost;
+    });
+    const avg=Object.values(raw).reduce((a,b)=>a+b,0)/RES.length||1;
+    RES.forEach(r=>need[r]=clamp(raw[r]/avg,.55,1.75));
+    const result={production:prod,demand,need,rawNeed:raw};
+    ACTIVE_BOT_CACHE.need.set(key,result);
+    return result;
+  }
   const prod=botProduction(p,board,geo),raw=empty(),need=empty(),demand=BuildingDemand(p,modeCfg,strategicPlan);
   const timeBoost=strategicPlan?.estimatedTurns?clamp(2.0/Math.max(1,strategicPlan.estimatedTurns),.05,.70):0;
-  RES.forEach(r=>{
-    const ps=PersonalScarcity(r,prod),bs=BoardScarcity(r,board,players,geo,modeCfg),gap=RelativeGap(r,p,players,board,geo);
-    const planMissing=strategicPlan?.missing?.[r]||0;
-    const objectiveBoost=planMissing>0?1+timeBoost*Math.min(3,planMissing):1;
-    raw[r]=demand[r]*ps*bs*(1+Math.max(0,-gap))*modeCfg.bankScarcity*objectiveBoost;
-  });
-  const avg=Object.values(raw).reduce((a,b)=>a+b,0)/RES.length||1;
-  RES.forEach(r=>need[r]=clamp(raw[r]/avg,.55,1.75));
+  RES.forEach(r=>{const ps=PersonalScarcity(r,prod),bs=BoardScarcity(r,board,players,geo,modeCfg),gap=RelativeGap(r,p,players,board,geo);const planMissing=strategicPlan?.missing?.[r]||0;const objectiveBoost=planMissing>0?1+timeBoost*Math.min(3,planMissing):1;raw[r]=demand[r]*ps*bs*(1+Math.max(0,-gap))*modeCfg.bankScarcity*objectiveBoost;});
+  const avg=Object.values(raw).reduce((a,b)=>a+b,0)/RES.length||1;RES.forEach(r=>need[r]=clamp(raw[r]/avg,.55,1.75));
   return{production:prod,demand,need,rawNeed:raw};
 }
 function simulateSettlementPlacement(v,p,players){
@@ -1191,7 +1234,7 @@ function reachableFutureSpots(v,p,players,board,geo,ports,bank,targetVP,modeCfg)
   const startRoads=[...(p.roads||[])],seen=new Set(),queue=[{v,path:[]}],out=[],bestDepth=new Map([[v,0]]);
   while(queue.length){
     const cur=queue.shift();
-    if(cur.path.length>=4)continue;
+    if(cur.path.length>=3)continue;
     const virtual={...p,roads:[...startRoads,...cur.path]};
     for(const eid of geo.vertexEdges[cur.v]||[]){
       if(startRoads.includes(eid)||cur.path.includes(eid))continue;
@@ -1221,15 +1264,26 @@ function opponentExpansionThreat(v,opp,players,board,geo,ports,bank,targetVP,mod
   const raceFactor=openVP>=targetVP-1?.18:openVP>=targetVP-3?.10:openVP>=targetVP-5?.04:0;
   return clamp(pathFactor+cardPressure*.18+pieceFactor+raceFactor,0,.98);
 }
+function getOpponentRankProfile(opp,players,board,geo,ports,bank,targetVP,modeCfg){
+  if(ACTIVE_BOT_CACHE){
+    const key=botPlanningFingerprint(opp,null)+`|rank|${targetVP}|${modeCfg?.key||''}`;
+    const hit=ACTIVE_BOT_CACHE.opponentRanks.get(key);
+    if(hit)return hit;
+  }
+  const legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,players,geo));
+  const values=legal.map(v=>({v,s:quickSpotValue(v,opp,players,board,geo,ports,bank,targetVP,modeCfg)})).sort((a,b)=>b.s-a.s);
+  const rank=new Map(),value=new Map();values.forEach((x,i)=>{rank.set(x.v,i);value.set(x.v,x.s);});
+  const profile={rank,value,top:values.slice(0,8)};
+  if(ACTIVE_BOT_CACHE){const key=botPlanningFingerprint(opp,null)+`|rank|${targetVP}|${modeCfg?.key||''}`;ACTIVE_BOT_CACHE.opponentRanks.set(key,profile);}
+  return profile;
+}
 function opponentTakeProbability(v,p,players,board,geo,ports,bank,targetVP,modeCfg){
   const opponents=players.filter(x=>x.id!==p.id);if(!opponents.length||!legalSettlement(v,players,geo))return 0;
   const myIndex=players.findIndex(x=>x.id===p.id);let survive=1;
   for(const opp of opponents){
     const threat=opponentExpansionThreat(v,opp,players,board,geo,ports,bank,targetVP,modeCfg);
-    const legal=geo.vertices.map((_,i)=>i).filter(x=>legalSettlement(x,players,geo));
-    const target=quickSpotValue(v,opp,players,board,geo,ports,bank,targetVP,modeCfg);
-    const ranked=legal.map(x=>quickSpotValue(x,opp,players,board,geo,ports,bank,targetVP,modeCfg)).sort((a,b)=>b-a);
-    const rank=Math.max(0,ranked.findIndex(x=>Math.abs(x-target)<1e-9));
+    const profile=getOpponentRankProfile(opp,players,board,geo,ports,bank,targetVP,modeCfg);
+    const rank=profile.rank.get(v)??999;
     const rankChance=rank<2?.82:rank<5?.54:rank<10?.24:.07;
     const oppIndex=players.findIndex(x=>x.id===opp.id);
     const order=(oppIndex-myIndex+players.length)%players.length;
@@ -1239,10 +1293,16 @@ function opponentTakeProbability(v,p,players,board,geo,ports,bank,targetVP,modeC
   return clamp(1-survive,0,.99);
 }
 function quickSpotValue(v,p,players,board,geo,ports,bank,targetVP,modeCfg){
+  const cacheKey=ACTIVE_BOT_CACHE?`${botPlanningFingerprint(p,null)}|spot|${v}|${targetVP}|${modeCfg?.key||''}`:null;
+  if(ACTIVE_BOT_CACHE&&cacheKey&&ACTIVE_BOT_CACHE.spot.has(cacheKey))return ACTIVE_BOT_CACHE.spot.get(cacheKey);
   const nf=NeedProfile(p,players,board,geo,bank,modeCfg),sp=spotProduction(v,board,geo);
+  const result=(function(){
   const P=placementResourceValue(sp,nf)/36,C=coverageValue(v,sp,p,board,geo,nf);
   const port=portAt(v,ports)?Math.min(3,TValue(v,p,players,board,geo,ports,bank,targetVP,modeCfg)*.18):0;
-  return P+C+port;
+    return P+C+port;
+  })();
+  if(ACTIVE_BOT_CACHE&&cacheKey)ACTIVE_BOT_CACHE.spot.set(cacheKey,result);
+  return result;
 }
 function EValue(v,p,players,board,geo,ports,bank,targetVP,modeCfg){
   const simulated=(!p.settlements?.includes(v)&&!p.cities?.includes(v))&&legalSettlement(v,players,geo)
@@ -1259,7 +1319,7 @@ function EValue(v,p,players,board,geo,ports,bank,targetVP,modeCfg){
 function fastFutureSpots(v,p,players,board,geo,ports,bank,targetVP,modeCfg,cache){
   const key=`${p.id}:${v}:${(p.roads||[]).join(',')}:${(p.settlements||[]).join(',')}`;
   if(cache.future.has(key))return cache.future.get(key);
-  const future=reachableFutureSpots(v,p,players,board,geo,ports,bank,targetVP,modeCfg).slice(0,18);
+  const future=reachableFutureSpots(v,p,players,board,geo,ports,bank,targetVP,modeCfg).slice(0,10);
   cache.future.set(key,future);return future;
 }
 function fastOpponentChance(v,p,players,board,geo,ports,bank,targetVP,modeCfg,cache){
@@ -1316,15 +1376,16 @@ function buildStrategicPlan(p,players,board,geo,ports,bank,targetVP,existing=nul
   }
   if(piecesRemaining(p).settlements>0){
     const legal=[];for(let v=0;v<geo.vertices.length;v++)if(legalSettlement(v,players,geo))legal.push(v);
-    const ranked=legal.map(v=>({v,s:quickSpotValue(v,p,players,board,geo,ports,bank,targetVP,cfg)})).sort((a,b)=>b.s-a.s).slice(0,40);
+    const ranked=legal.map(v=>({v,s:quickSpotValue(v,p,players,board,geo,ports,bank,targetVP,cfg)})).sort((a,b)=>b.s-a.s).slice(0,12);
     for(const {v} of ranked){
       const path=settlementConnected(v,p,geo)?[]:strategicRoadPathToSettlement(v,p,players,geo);if(path===null)continue;
-      const spot=placementScore(v,p,players,board,geo,ports,bank,targetVP,{},null);if(!Number.isFinite(spot))continue;
-      const threat=opponentTakeProbability(v,p,players,board,geo,ports,bank,targetVP,cfg);
-      const e=EValue(v,p,players,board,geo,ports,bank,targetVP,cfg);
-      const roadPenalty=(path.length||0)*2.6;
-      const score=spot+e*1.25+ComplementarityScore(v,p,players,board,geo,bank,targetVP,cfg)*3.5+portAt(v,ports)?0:0;
-      allPlans.push({type:'settlement',target:v,score:spot+e*1.25+ComplementarityScore(v,p,players,board,geo,bank,targetVP,cfg)*3.5-roadPenalty+threat*9,path,createdTurn:existing?.createdTurn||0,reason:'Expansion + resource-completion objective'});
+      const expansion=openingExpansionScore(v,p,players,geo);
+      let threat=0;for(const opp of players.filter(x=>x.id!==p.id))threat=Math.max(threat,opponentExpansionThreat(v,opp,players,board,geo,ports,bank,targetVP,cfg));
+      const complement=ComplementarityScore(v,p,players,board,geo,bank,targetVP,cfg);
+      const port=portAt(v,ports)?Math.min(3,TValue(v,p,players,board,geo,ports,bank,targetVP,cfg)*.28):0;
+      const roadPenalty=(path.length||0)*2.8;
+      const score=(openingPlacementScore(v,p,players,board,geo,ports,bank,targetVP)*.42)+expansion*2.4+complement*2.2+port-roadPenalty-threat*6;
+      allPlans.push({type:'settlement',target:v,score,path,createdTurn:existing?.createdTurn||0,reason:'Low-latency expansion + resource-completion objective'});
     }
   }
   if(!allPlans.length)return null;
@@ -1382,7 +1443,7 @@ function bestRoadBuildingPair(p,players,board,geo,ports,bank,targetVP,deadline=n
     for(const eid of forced.slice(0,2)){if(legalRoad(eid,vp,players,geo)){roads.push(eid);vp={...vp,roads:[...vp.roads,eid]};}}
     if(roads.length)best={roads,value:260+roads.length*45};
   }
-  const ranked=legalAll.slice().sort((a,b)=>roadActionPotential(b,p,players,board,geo,targetVP,ports,bank,strategicPlan)-roadActionPotential(a,p,players,board,geo,targetVP,ports,bank,strategicPlan)).slice(0,28);
+  const ranked=legalAll.slice().sort((a,b)=>roadActionPotential(b,p,players,board,geo,targetVP,ports,bank,strategicPlan)-roadActionPotential(a,p,players,board,geo,targetVP,ports,bank,strategicPlan)).slice(0,16);
   for(const a of ranked){
     if(deadline!=null&&now()>=deadline-160)break;
     const v1={...p,roads:[...(p.roads||[]),a]};let value=roadActionPotential(a,p,players,board,geo,targetVP,ports,bank,strategicPlan);
@@ -1458,7 +1519,7 @@ function cheapCandidateScore(action,p,players,board,geo,ports,bank,deck,targetVP
   let s=0;
   if(action.type==='settlement'){s=quickSpotValue(action.spot,p,players,board,geo,ports,bank,targetVP,botModeConfig(players,targetVP));if(plan?.type==='settlement'&&plan.target===action.spot)s+=1000;}
   else if(action.type==='city'){s=cityActionValue(action.spot,p,players,board,geo,ports,bank,targetVP,turnState)+(plan?.type==='city'&&plan.target===action.spot?1000:0);}
-  else if(action.type==='road'){s=roadActionPotential(action.spot,p,players,board,geo,targetVP,ports,bank,turnState)+(plan?.type==='settlement'&&(plan.path||[]).includes(action.spot)?900:0);}
+  else if(action.type==='road'){s=cheapRoadPotential(action.spot,p,players,board,geo,targetVP,ports,bank,turnState);}
   else if(action.type==='trade'||action.type==='playerTrade'){s=fastTradeOpportunity(action,p,players,board,geo,ports,bank,deck,targetVP,turnState.heldAwards||{},turnState.scoreCache||null,turnState)*.5;}
   else if(action.type==='buyDev')s=5+(turnState.cardUtility||0);
   else if(action.type==='play')s=6+(action.card==='Road Building'&&plan?.type==='settlement'?500:0);
@@ -1495,15 +1556,17 @@ function simulatePublicBotAction(action,p,players,board,geo,ports,bank,deck){
   return {players:nextPlayers,bank:nextBank,deck};
 }
 function opponentResponseValue(action,p,players,board,geo,ports,bank,deck,targetVP,turnState={}){
-  const cf=simulatePublicBotAction(action,p,players,board,geo,ports,bank,deck),threats=[];
-  for(const opp of cf.players.filter(x=>x.id!==p.id)){
+  let worst=0;
+  for(const opp of players.filter(x=>x.id!==p.id)){
     const safeOpp={...opp,hand:empty(),publicCardCount:publicCardCount(opp)};
-    let best=-Infinity;
-    for(let v=0;v<geo.vertices.length;v++)if(legalSettlement(v,cf.players,geo))best=Math.max(best,quickSpotValue(v,safeOpp,cf.players,board,geo,ports,cf.bank,targetVP,botModeConfig(cf.players,targetVP)));
-    for(const v of safeOpp.settlements||[])best=Math.max(best,cityActionValue(v,safeOpp,cf.players,board,geo,ports,cf.bank,targetVP,turnState));
-    threats.push(Number.isFinite(best)?best:0);
+    const profile=getOpponentRankProfile(safeOpp,players,board,geo,ports,bank,targetVP,botModeConfig(players,targetVP));
+    let bestSpot=profile.top[0]?.s||0;
+    if(action.type==='settlement'&&profile.top[0]?.v===action.spot)bestSpot=profile.top[1]?.s||0;
+    let bestCity=0;for(const v of opp.settlements||[])bestCity=Math.max(bestCity,cityActionValue(v,safeOpp,players,board,geo,ports,bank,targetVP,turnState));
+    const race=openVictoryPoints(opp,players,geo,{roadOwner:null,armyOwner:null})>=targetVP-2?16:0;
+    worst=Math.max(worst,bestSpot+bestCity+race);
   }
-  return Math.max(0,...threats);
+  return worst;
 }
 function scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={}){
   const all=actionCandidates(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState).filter(a=>!turnState.failedActionKeys||!turnState.failedActionKeys.has(decisionKeyForEngine(a)));
@@ -1517,20 +1580,20 @@ function scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,tu
   if(plan?.type==='city'){const c=candidates.find(x=>x.type==='city'&&x.spot===plan.target);if(c)forced.push(c);}
   const groups={settlement:[],city:[],road:[],trade:[],playerTrade:[],play:[],buyDev:[],pass:[]};
   candidates.forEach(a=>(groups[a.type]||groups.play).push(a));
-  const quotas={settlement:36,city:12,road:42,trade:24,playerTrade:28,play:10,buyDev:4,pass:1};
+  const quotas={settlement:8,city:4,road:8,trade:6,playerTrade:6,play:4,buyDev:2,pass:1};
   const selected=new Map();
   forced.forEach(a=>selected.set(decisionKeyForEngine(a),a));
   for(const [type,list] of Object.entries(groups)){
-    list.sort((a,b)=>cheapCandidateScore(b,p,players,board,geo,ports,bank,deck,targetVP,turnState)-cheapCandidateScore(a,p,players,board,geo,ports,bank,deck,targetVP,turnState));
-    list.slice(0,quotas[type]||8).forEach(a=>selected.set(decisionKeyForEngine(a),a));
+    const cheaplyRanked=list.map(a=>({a,cheap:cheapCandidateScore(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)})).sort((x,y)=>y.cheap-x.cheap);
+    cheaplyRanked.slice(0,quotas[type]||8).forEach(item=>selected.set(decisionKeyForEngine(item.a),item.a));
   }
   const planningState={...turnState,scoreCache:turnState.scoreCache||makeScoreCache(players,board,geo,ports,bank,targetVP)};
   if(!Number.isFinite(planningState.cardUtility))planningState.cardUtility=fastCardExpectedUtility(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,planningState,planningState.scoreCache);
   const scored=[];let count=0;
   for(const action of selected.values()){
     const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();
-    if(now>=deadline)break;
-    scored.push({...action,score:fastBotActionScore(action,p,players,board,geo,ports,bank,deck,targetVP,heldAwards,planningState,planningState.scoreCache)});count++;
+    if(now>=deadline-BOT_DEEP_SEARCH_RESERVE_MS)break;
+    scored.push({...action,score:fastBotActionScore(action,p,players,board,geo,ports,bank,deck,targetVP,heldAwards,planningState,planningState.scoreCache)});count++;if(count>=BOT_DEEP_ACTION_LIMIT)break;
   }
   if(forced.length){
     const keys=new Set(forced.map(decisionKeyForEngine));
@@ -1555,7 +1618,20 @@ function bestCityFollowThrough(p,players,board,geo,ports,bank,targetVP,turnState
   for(const spot of p.settlements){const score=cityActionValue(spot,p,players,board,geo,ports,bank,targetVP,turnState);if(!best||score>best.score)best={spot,score};}
   return best;
 }
+function cheapRoadPotential(eid,p,players,board,geo,targetVP,ports=[],bank=emptyBank(),turnState={}){
+  const e=geo.edges[eid];if(!e||!legalRoad(eid,p,players,geo))return-Infinity;
+  const virtual={...p,roads:[...(p.roads||[]),eid]},vp=players.map(x=>x.id===p.id?virtual:x),cfg=botModeConfig(players,targetVP);
+  const plan=turnState.strategicPlan;
+  if(plan?.type==='settlement'){const idx=(plan.path||[]).indexOf(eid);if(idx>=0)return 900-idx*22;}
+  let best=-1;
+  for(const v of [e.a,e.b]){
+    if(legalSettlement(v,vp,geo))best=Math.max(best,quickSpotValue(v,virtual,vp,board,geo,ports,bank,targetVP,cfg)+8);
+    for(const n of geo.neighbors[v]||[]){if(legalSettlement(n,vp,geo))best=Math.max(best,quickSpotValue(n,virtual,vp,board,geo,ports,bank,targetVP,cfg)*.62);}
+  }
+  return best+((portAt(e.a,ports)||portAt(e.b,ports))?1.25:0);
+}
 function roadActionPotential(eid,p,players,board,geo,targetVP,ports=[],bank=emptyBank(),plannerState=null){
+  if(ACTIVE_BOT_CACHE){const key=`${botPlanningFingerprint(p,plannerState?.strategicPlan||null)}|road|${eid}|${targetVP}`;if(ACTIVE_BOT_CACHE.road.has(key))return ACTIVE_BOT_CACHE.road.get(key);}
   const e=geo.edges[eid];if(!e||!legalRoad(eid,p,players,geo))return-Infinity;
   const virtual={...p,roads:[...(p.roads||[]),eid]},vp=players.map(x=>x.id===p.id?virtual:x),cfg=botModeConfig(players,targetVP);
   let best=0;
@@ -1565,10 +1641,13 @@ function roadActionPotential(eid,p,players,board,geo,targetVP,ports=[],bank=empt
     for(const item of future){const simulated={...virtual,settlements:[...(virtual.settlements||[]),item.v]},simPlayers=vp.map(x=>x.id===p.id?simulated:x);best=Math.max(best,quickSpotValue(item.v,simulated,simPlayers,board,geo,ports,bank,targetVP,cfg)-item.roads*1.2);}
   }
   const before=connectedRoadLength(p,geo,players),after=connectedRoadLength(virtual,geo,players);const awardBefore=awards(players,geo),awardAfter=awards(vp,geo),longest=(awardAfter.roadOwner===p.id&&awardBefore.roadOwner!==p.id)?2:0;
-  return best+Math.max(0,after-before)*.7+longest*.15-.12;
+  const result=best+Math.max(0,after-before)*.7+longest*.15-.12;
+  if(ACTIVE_BOT_CACHE)ACTIVE_BOT_CACHE.road.set(`${botPlanningFingerprint(p,plannerState?.strategicPlan||null)}|road|${eid}|${targetVP}`,result);
+  return result;
 }
 function placementScore(v,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,heldAwards={roadOwner:null,armyOwner:null},cache=null,plannerState=null){
   if(!legalSettlement(v,players,geo)&&!(p.settlements||[]).includes(v))return-Infinity;
+  if(cache){const key=`${botPlanningFingerprint(p,plannerState?.strategicPlan||null)}|placement|${v}|${targetVP}`;if(cache.placement.has(key))return cache.placement.get(key);}
   const cfg=botModeConfig(players,targetVP),plan=plannerState?.strategicPlan||null;
   const nf=NeedProfile(p,players,board,geo,bank,cfg,plan),sp=spotProduction(v,board,geo);
   const P=placementResourceValue(sp,nf)/36,C=coverageValue(v,sp,p,board,geo,nf);
@@ -1579,46 +1658,71 @@ function placementScore(v,p,players,board,geo,ports,bank=emptyBank(),targetVP=pl
   const risk=RiskValue({type:'settlement',spot:v},p,players,board,geo,targetVP,cfg);
   const ph=cfg.phases.find(x=>p.vp<=x.maxVP)||cfg.phases[cfg.phases.length-1];
   const port=portAt(v,ports)?Math.min(3,TValue(v,p,players,board,geo,ports,bank,targetVP,cfg)*.35):0;
-  return ph.wP*P+ph.wC*C+ph.wE*E+ph.wY*Y+block+urgency-ph.riskWeight*risk+port;
+  const result=ph.wP*P+ph.wC*C+ph.wE*E+ph.wY*Y+block+urgency-ph.riskWeight*risk+port;
+  if(cache)cache.placement.set(`${botPlanningFingerprint(p,plannerState?.strategicPlan||null)}|placement|${v}|${targetVP}`,result);
+  return result;
+}
+function openingExpansionScore(v,p,players,geo){
+  const sim={...p,settlements:[...(p.settlements||[]),v]};const simPlayers=players.map(x=>x.id===p.id?sim:x);let score=0;
+  for(const eid of geo.vertexEdges[v]||[]){const e=geo.edges[eid];const n=e.a===v?e.b:e.a;if(legalSettlement(n,simPlayers,geo))score+=2.5;for(const eid2 of geo.vertexEdges[n]||[]){if(eid2===eid)continue;const e2=geo.edges[eid2];const n2=e2.a===n?e2.b:e2.a;if(legalSettlement(n2,simPlayers,geo))score+=.85;}}
+  return Math.min(score,12);
 }
 function openingPlacementScore(v,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,cache=null){
   if(!legalSettlement(v,players,geo))return-Infinity;
   const cfg=botModeConfig(players,targetVP),nf=NeedProfile(p,players,board,geo,bank,cfg),sp=spotProduction(v,board,geo);
   const rawPips=RES.reduce((a,r)=>a+sp[r]*36,0),resourceKinds=RES.filter(r=>sp[r]>0).length;
   const scarcityAdjusted=RES.reduce((a,r)=>a+sp[r]*36*(scarcityRankFactors(nf.need)[r]),0);
-  const coverage=coverageValue(v,sp,p,board,geo,nf),expansion=EValue(v,p,players,board,geo,ports,bank,targetVP,cfg);
-  const complement=ComplementarityScore(v,p,players,board,geo,bank,targetVP,cfg),port=portAt(v,ports)?TValue(v,p,players,board,geo,ports,bank,targetVP,cfg):0;
-  const numbers=(geo.vertexTiles[v]||[]).map(t=>board[t]?.number).filter(Number.isFinite);const unique=new Set(numbers).size;
-  return rawPips*1.0+scarcityAdjusted*.12+resourceKinds*4+coverage*1.6+expansion*1.7+complement*1.2+port*1.3+unique*1.1+comboHitProbability([v],board,geo)*8;
+  const coverage=coverageValue(v,sp,p,board,geo,nf),expansion=openingExpansionScore(v,p,players,geo);
+  const port=portAt(v,ports)?TValue(v,p,players,board,geo,ports,bank,targetVP,cfg):0;
+  const numbers=(geo.vertexTiles[v]||[]).map(t=>board[t]?.number).filter(Number.isFinite),unique=new Set(numbers).size;
+  return rawPips*1.04+scarcityAdjusted*.13+resourceKinds*4.4+coverage*1.55+expansion*1.8+port*1.1+unique*1.2+comboHitProbability([v],board,geo)*8;
 }
-function openingPairScore(a,b,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,cache=null){
+function openingPairScore(a,b,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,cache=null,baseScores=null){
   if(a===b||!legalSettlement(a,players,geo))return-Infinity;
   const firstPlayers=players.map(x=>x.id===p.id?{...x,settlements:[...(x.settlements||[]),a],vp:(x.vp||0)+1}:x);
   if(!legalSettlement(b,firstPlayers,geo))return-Infinity;
   const firstP=firstPlayers.find(x=>x.id===p.id)||p;
-  let score=openingPlacementScore(a,p,players,board,geo,ports,bank,targetVP)+openingPlacementScore(b,firstP,firstPlayers,board,geo,ports,bank,targetVP);
-  const sa=spotProduction(a,board,geo),sb=spotProduction(b,board,geo),combined=RES.reduce((n,r)=>n+sa[r]+sb[r],0)*36,kinds=RES.filter(r=>sa[r]+sb[r]>0).length,overlap=RES.reduce((n,r)=>n+Math.min(sa[r],sb[r]),0)*36;
-  score+=combined*.72+kinds*5.2-overlap*.65+pipelineComboBonus(sa,sb,players.length===2)+comboHitProbability([a,b],board,geo)*24;
-  const opponentContention=[];
+  const sa=spotProduction(a,board,geo),sb=spotProduction(b,board,geo);
+  const baseA=baseScores?.get(a)??openingPlacementScore(a,p,players,board,geo,ports,bank,targetVP);
+  const baseB=baseScores?.get(b)??openingPlacementScore(b,firstP,firstPlayers,board,geo,ports,bank,targetVP);
+  const combined=RES.reduce((n,r)=>n+sa[r]+sb[r],0)*36,kinds=RES.filter(r=>sa[r]+sb[r]>0).length,overlap=RES.reduce((n,r)=>n+Math.min(sa[r],sb[r]),0)*36;
+  let score=baseA+baseB+combined*.78+kinds*5.4-overlap*.62+pipelineComboBonus(sa,sb,players.length===2)+comboHitProbability([a,b],board,geo)*22;
   for(const opp of players.filter(x=>x.id!==p.id)){
-    const legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,firstPlayers,geo));
-    const vals=legal.map(v=>({v,s:openingPlacementScore(v,opp,firstPlayers,board,geo,ports,bank,targetVP)})).sort((x,y)=>y.s-x.s);
-    const rank=vals.findIndex(x=>x.v===b);
-    const chance=rank===0?.9:rank<2?.68:rank<5?.38:rank<10?.16:.05;
-    opponentContention.push(chance);
+    const oppLegal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,players,geo));
+    let rank=999,best= -Infinity;
+    for(const v of oppLegal){const sv=openingPlacementScore(v,opp,players,board,geo,ports,bank,targetVP);if(v===b)rank=sv>best?0:rank;best=Math.max(best,sv);}
+    if(rank===0)score-=10;
+    const oppBScore=openingPlacementScore(b,opp,players,board,geo,ports,bank,targetVP);
+    if(oppBScore>=best*.94)score-=12;
   }
-  score-=opponentContention.reduce((a,b)=>a+b,0)*11;
-  if((geo.neighbors[a]||[]).includes(b))score-=3.5;
+  if((geo.neighbors[a]||[]).includes(b))score-=2.5;
   return score;
 }
-function bestOpeningPair(p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,budgetMs=2200){
-  const start=typeof performance!=='undefined'&&performance.now?performance.now():Date.now(),legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,players,geo));
-  const ranked=legal.map(v=>({v,s:openingPlacementScore(v,p,players,board,geo,ports,bank,targetVP)})).sort((a,b)=>b.s-a.s);const pre=ranked.slice(0,Math.min(BOT_SETUP_PAIR_CANDIDATES,ranked.length)).map(x=>x.v);let best=null;
-  for(const a of pre)for(const b of pre){if(a===b)continue;if(((typeof performance!=='undefined'&&performance.now?performance.now():Date.now())-start)>=budgetMs)return best;const score=openingPairScore(a,b,p,players,board,geo,ports,bank,targetVP,null);if(!Number.isFinite(score))continue;if(!best||score>best.score)best={first:a,second:b,score};}
+function bestOpeningPair(p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,budgetMs=BOT_OPENING_PAIR_BUDGET_MS){
+  const start=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();
+  const legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,players,geo));
+  const baseScores=new Map(legal.map(v=>[v,openingPlacementScore(v,p,players,board,geo,ports,bank,targetVP)]));
+  const pre=legal.slice().sort((a,b)=>(baseScores.get(b)||-Infinity)-(baseScores.get(a)||-Infinity)).slice(0,BOT_OPENING_CANDIDATES);
+  let best=null;
+  outer: for(const a of pre){
+    for(const b of pre){
+      if(a===b)continue;
+      const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();if(now-start>=budgetMs)break outer;
+      const score=openingPairScore(a,b,p,players,board,geo,ports,bank,targetVP,null,baseScores);
+      if(Number.isFinite(score)&&(!best||score>best.score))best={first:a,second:b,score};
+    }
+  }
   return best;
 }
-function bestOpeningCompanion(first,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,budgetMs=1200){
-  if(first==null)return null;const virtualPlayers=players.map(x=>x.id===p.id?{...x,settlements:[...(x.settlements||[]),first],vp:(x.vp||0)+1}:x),virtualBot=virtualPlayers.find(x=>x.id===p.id)||p;const legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,virtualPlayers,geo));let best=null;const start=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();for(const b of legal.sort((a,c)=>openingPlacementScore(c,virtualBot,virtualPlayers,board,geo,ports,bank,targetVP)-openingPlacementScore(a,virtualBot,virtualPlayers,board,geo,ports,bank,targetVP))){if(Date.now()-start>=budgetMs)break;const score=openingPairScore(first,b,virtualBot,virtualPlayers,board,geo,ports,bank,targetVP,null);if(best==null||score>best.score)best={first,second:b,score};}return best;
+function bestOpeningCompanion(first,p,players,board,geo,ports,bank=emptyBank(),targetVP=players.length===2?15:10,budgetMs=220){
+  if(first==null)return null;
+  const virtualPlayers=players.map(x=>x.id===p.id?{...x,settlements:[...(x.settlements||[]),first],vp:(x.vp||0)+1}:x),virtualBot=virtualPlayers.find(x=>x.id===p.id)||p;
+  const legal=geo.vertices.map((_,i)=>i).filter(v=>legalSettlement(v,virtualPlayers,geo));
+  const scores=new Map(legal.map(v=>[v,openingPlacementScore(v,virtualBot,virtualPlayers,board,geo,ports,bank,targetVP)]));
+  const ranked=legal.sort((a,b)=>(scores.get(b)||-Infinity)-(scores.get(a)||-Infinity)).slice(0,BOT_OPENING_CANDIDATES);
+  let best=null;const start=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();
+  for(const b of ranked){if((typeof performance!=='undefined'&&performance.now?performance.now():Date.now())-start>=budgetMs)break;const score=openingPairScore(first,b,virtualBot,virtualPlayers,board,geo,ports,bank,targetVP,null,scores);if(!best||score>best.score)best={first,second:b,score};}
+  return best;
 }
 function chooseRobberAction(p,players,board,geo,ports,bank,targetVP,memorySnapshots=[]){
   const cfg=botModeConfig(players,targetVP),opps=players.filter(x=>x.id!==p.id);let best=null;
@@ -1647,11 +1751,11 @@ function chooseRobberAction(p,players,board,geo,ports,bank,targetVP,memorySnapsh
 }
 function nearPerfectBotPlan(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={}){
   const scored=scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState).filter(a=>a.type!=='pass'&&Number.isFinite(a.score));if(!scored.length)return null;
-  const deadline=turnState.deadline||0,top=scored.slice(0,8);let best=null;
+  const deadline=turnState.deadline||0,top=scored.slice(0,4);let best=null;
   for(const a of top){
     const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();if(deadline&&now>=deadline-80)break;
     let score=a.score;
-    if(a.type!=='trade'&&a.type!=='playerTrade')score-=opponentResponseValue(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)*.08;
+    if((a.type!=='trade'&&a.type!=='playerTrade')&&top.indexOf(a)<2)score-=opponentResponseValue(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)*.08;
     if(a.type==='settlement'&&turnState.strategicPlan?.type==='settlement'&&a.spot===turnState.strategicPlan.target)score+=40;
     if(a.type==='road'&&turnState.strategicPlan?.type==='settlement'&&(turnState.strategicPlan.path||[]).includes(a.spot))score+=28;
     const candidate={...a,score};if(!best||candidate.score>best.score)best=candidate;
@@ -2426,6 +2530,7 @@ function App(){
     const pair=isPVBot?balancedDiceRef.current.roll(String(p.id),players.map(p=>String(p.id))):[1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];const a=pair[0],b=pair[1],sum=a+b;
     let localPlayers=clone(players),localBank={...bank},localDeck=[...deck],localBoard=clone(board);
     let strategicPlan=strategicPlansRef.current[p.id]||null;
+    ACTIVE_BOT_CACHE=createBotPlanningCache();
     const produced=resolveDiceRoll(localPlayers,localBoard,geo,sum,localBank);
     localPlayers=produced.players;localBank=produced.bank;
     globalGeoForPlanner=geo;
@@ -2648,6 +2753,7 @@ function App(){
     let failedActions=0;
     const finalizeBotTurn=()=>{
       if(botFinished)return;
+      resetBotPlanningCache();
       botFinished=true;
       if(botHardStopRef.current){window.clearTimeout(botHardStopRef.current);botHardStopRef.current=null;}
       if(botTradeTimeoutRef.current){window.clearTimeout(botTradeTimeoutRef.current);botTradeTimeoutRef.current=null;}
@@ -2671,6 +2777,7 @@ function App(){
       if(now>=botDeadline){finalizeBotTurn();return;}
       if(runToken!==gameRunRef.current||screen!=="playing"||winner||drawn){botTurnRef.current=null;return;}
       const me=activeLocal();if(!me){finalizeBotTurn();return;}
+      ACTIVE_BOT_CACHE=createBotPlanningCache();
       const planningPlayers=memoryAwarePlayers(me,localPlayers);
       const planningBot=planningPlayers.find(x=>x.id===me.id)||me;
       strategicPlan=buildStrategicPlan(planningBot,planningPlayers,localBoard,geo,ports,localBank,targetVP,strategicPlan);
@@ -2686,7 +2793,7 @@ function App(){
       const beforeMe=me;
       const beforeSignature=JSON.stringify({hand:beforeMe.hand,settlements:beforeMe.settlements,cities:beforeMe.cities,roads:beforeMe.roads,dev:beforeMe.development,bank:localBank,deck:localDeck.length});
       const executionResult=executeAction(best);
-      if(executionResult==="awaiting-trade")return;
+      if(executionResult==="awaiting-trade"){resetBotPlanningCache();return;}
       if(!executionResult){
         failedActions++;
         failedActionKeys.add(decisionKeyForEngine(best));
@@ -2695,7 +2802,7 @@ function App(){
         }
         strategicPlansRef.current[p.id]=strategicPlan;
         if(failedActions>=10){appendLog(`${p.name} exhausted invalid-action retries after replanning; preserving the best completed line.`);finalizeBotTurn();return;}
-        window.setTimeout(iterateBot,0);return;
+        resetBotPlanningCache();window.setTimeout(iterateBot,0);return;
       }
       const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineTop3:(best.engineTop3||[]).map(x=>({action:actionLabel(x),score:x.score}))};
       decisionsRef.current=[...decisionsRef.current,botDecision];

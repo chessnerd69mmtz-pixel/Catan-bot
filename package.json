@@ -1,6 +1,6 @@
 {
   "name": "monopoly-local",
-  "version": "6.2.0",
+  "version": "6.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node tests/run-tests.mjs",
     "audit": "node scripts/final-feature-audit.mjs",
-    "verify": "npm run test && node tests/run-all-regressions.mjs && npm run audit"
+    "perf": "node scripts/v76-performance-benchmark.mjs",
+    "verify": "npm run test && node tests/run-all-regressions.mjs && npm run audit && npm run perf"
   },
   "dependencies": {
     "@vitejs/plugin-react": "4.3.4",

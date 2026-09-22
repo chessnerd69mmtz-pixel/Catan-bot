@@ -1,16 +1,13 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-
 const src=fs.readFileSync(new URL('../src/main.jsx', import.meta.url),'utf8');
-
-assert.match(src,/v28-duel-race-and-4p-stability-planner/);
+assert.match(src,/v28-duel-race-and-4p-stability-planner|v29-semi-perfect-low-latency-planner/);
 assert.match(src,/function botRacePressure\(/);
-assert.ok(/(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*botRacePressure\(/.test(src) || /botRacePressure\([^\n]*\)/.test(src),'race-pressure helper is not wired into action scoring');
+assert.ok(/botRacePressure\(/.test(src),'race-pressure helper is not wired');
 assert.match(src,/botSevenResumeRef=useRef\(null\)/);
 assert.match(src,/botSevenResumeRef\.current=\{/);
 assert.match(src,/Human players must make their own mandatory 7-discard/);
 assert.match(src,/botSevenResumeRef\.current=null;/);
-assert.ok(!src.includes("selfDelta.toFixed(2), opponent ΔV ${oppDelta.toFixed(2)}"), 'undefined bot-trade delta logging remains');
+assert.ok(!src.includes('selfDelta.toFixed(2), opponent ΔV ${oppDelta.toFixed(2)}'), 'undefined bot-trade delta logging remains');
 assert.match(src,/both sides passed the strategic trade-value gate/);
-
 console.log('V69 GAMEPLAY FIX REGRESSION PASSED — 1v1 race weighting, bot-turn human discard, and bot-trade stability');

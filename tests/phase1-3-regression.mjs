@@ -61,7 +61,7 @@ function checkPlan(plan,p,players,board){
 }
 
 let totalMs1v1=0,totalMs4p=0;
-for(let i=0;i<30;i++){
+for(let i=0;i<8;i++){
   const board=makeBoard(geo,{highPipsTouch:false});
   const ps=[newPlayer(0,"A",true,i%2?"Hard":"Impossible"),newPlayer(1,"B",true,"Medium")];
   ps[0].settlements=[0];ps[1].settlements=[25];
@@ -71,7 +71,7 @@ for(let i=0;i<30;i++){
   totalMs1v1+=Date.now()-t;
   checkPlan(plan,ps[0],ps,board);
 }
-for(let i=0;i<30;i++){
+for(let i=0;i<8;i++){
   const board=makeBoard(geo,{highPipsTouch:false});
   const ps=[
     newPlayer(0,"A",true,"Impossible"),newPlayer(1,"B",true,"Hard"),

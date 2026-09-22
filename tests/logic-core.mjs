@@ -461,10 +461,73 @@ function unifiedActionScore(action,p,players,board,geo,ports,bank,deck,targetVP,
     if(action.card==="Monopoly"){const opp=players.filter(x=>x.id!==p.id),need=NeedProfile(p,players,board,geo,bank,cfg).need;score+=Math.max(0,...RES.map(r=>opp.reduce((n,x)=>n+((botProduction(x,board,geo)[r]||0)*((x.publicCardCount??total(x.hand))*.12)),0)*(need[r]||1)));}
     if(action.card==="Knight"){const rob=chooseRobberAction(p,players,board,geo,ports,bank,targetVP);score+=(rob?.score||0)*.5;}
   }
-  if(action.type==="playerTrade"){const partner=players.find(x=>x.id===action.partner);if(partner){const partnerAfter={...partner,hand:add(pay(partner.hand,{[action.get]:action.getAmount}),{[action.give]:action.giveAmount})};const oppBefore=unifiedPosition(0,partner,players,board,geo,ports,bank,targetVP,heldAwards);const oppAfter=unifiedPosition(0,partnerAfter,players.map(x=>x.id===partner.id?partnerAfter:x),board,geo,ports,bank,targetVP,heldAwards);const oppDelta=(oppAfter.P+oppAfter.C+oppAfter.T+oppAfter.E+oppAfter.Y)-(oppBefore.P+oppBefore.C+oppBefore.T+oppBefore.E+oppBefore.Y);score+=.35-Math.max(0,oppDelta)*.8;}}
+  if(action.type==="playerTrade"){
+    const partner=players.find(x=>x.id===action.partner);
+    if(partner){
+      const giveBundle=action.giveBundle||{[action.give]:action.giveAmount};
+      const getBundle=action.getBundle||{[action.get]:action.getAmount};
+      const partnerAfter={...partner,hand:add(pay(partner.hand,getBundle),giveBundle)};
+      const oppBefore=unifiedPosition(0,partner,players,board,geo,ports,bank,targetVP,heldAwards);
+      const oppAfter=unifiedPosition(0,partnerAfter,players.map(x=>x.id===partner.id?partnerAfter:x),board,geo,ports,bank,targetVP,heldAwards);
+      const oppDelta=(oppAfter.P+oppAfter.C+oppAfter.T+oppAfter.E+oppAfter.Y)-(oppBefore.P+oppBefore.C+oppBefore.T+oppBefore.E+oppBefore.Y);
+      score+=.35-Math.max(0,oppDelta)*.8+(action.tradeObjectiveGain||0);
+    }
+  }
   return score;
 }
 function cardExpectedUtility(p,players,board,geo,ports,bank,deck,targetVP,cfg){const probs=cardProbabilities(deck),vpGap=targetVP-(p.vp);let value=0;value+=(probs.Knight?.prob||0)*(vpGap<=3?2.4:1.1);value+=(probs["Road Building"]?.prob||0)*((p.roads||[]).length>=3?1.8:1);value+=(probs["Year of Plenty"]?.prob||0)*1.4;value+=(probs.Monopoly?.prob||0)*1.7;value+=(probs["Victory Point"]?.prob||0)*(vpGap<=2?4.5:1.8);return value;}
+function strategicTradeCandidates(p,players,board,geo,ports,bank,targetVP){
+  const out=[];
+  const cfg=botModeConfig(players,targetVP);
+  const selfNeed=NeedProfile(p,players,board,geo,bank,cfg).need;
+  const prod=botProduction(p,board,geo);
+  const buildTargets=[
+    {name:"city",cost:COSTS.city},
+    {name:"settlement",cost:COSTS.settlement},
+    {name:"road",cost:COSTS.road},
+    {name:"development",cost:COSTS.development}
+  ];
+  const readiness=(hand,cost)=>Object.entries(cost).reduce((n,[r,c])=>n+Math.max(0,c-(hand?.[r]||0)),0);
+  const beforeBest=Math.min(...buildTargets.map(x=>readiness(p.hand,x.cost)));
+  const missing=RES.slice().sort((a,b)=>(selfNeed[b]||0)-(selfNeed[a]||0));
+  const surplus=RES.slice().sort((a,b)=>((p.hand?.[b]||0)-(prod[b]||0))-((p.hand?.[a]||0)-(prod[a]||0)));
+  for(const partner of players.filter(x=>x.id!==p.id)){
+    if(!partner?.hand)continue;
+    const asks=RES.filter(r=>(partner.hand?.[r]||0)>0).slice(0,5);
+    for(const get of missing.slice(0,3)){
+      if(!asks.includes(get))continue;
+      for(const give of surplus.slice(0,3)){
+        if(give===get||(p.hand?.[give]||0)<1)continue;
+        const one={type:"playerTrade",partner:partner.id,giveBundle:{[give]:1},getBundle:{[get]:1}};
+        const two=(p.hand?.[give]||0)>=2?{type:"playerTrade",partner:partner.id,giveBundle:{[give]:2},getBundle:{[get]:1}}:null;
+        for(const offer of [one,two]){
+          if(!offer)continue;
+          const afterHand=add(pay(p.hand,offer.giveBundle),offer.getBundle);
+          const afterBest=Math.min(...buildTargets.map(x=>readiness(afterHand,x.cost)));
+          const immediate=(beforeBest-afterBest)*2.8+(selfNeed[get]||0)-(selfNeed[give]||0)*.35;
+          if(afterBest<beforeBest || immediate>.35)out.push({...offer,tradeObjective:get,tradeObjectiveGain:immediate});
+        }
+      }
+    }
+    // Also consider a 1-for-2 offer when the bot is flush with a surplus resource.
+    for(const get of missing.slice(0,2)){
+      if((partner.hand?.[get]||0)<2)continue;
+      for(const give of surplus.slice(0,2)){
+        if(give===get||(p.hand?.[give]||0)<1)continue;
+        const offer={type:"playerTrade",partner:partner.id,giveBundle:{[give]:1},getBundle:{[get]:2}};
+        const afterHand=add(pay(p.hand,offer.giveBundle),offer.getBundle);
+        const afterBest=Math.min(...buildTargets.map(x=>readiness(afterHand,x.cost)));
+        if(afterBest<beforeBest)out.push({...offer,tradeObjective:get,tradeObjectiveGain:(beforeBest-afterBest)*3.1});
+      }
+    }
+  }
+  const seen=new Set(),dedup=[];
+  for(const a of out){
+    const key=JSON.stringify([a.partner,a.giveBundle,a.getBundle]);
+    if(!seen.has(key)){seen.add(key);dedup.push(a);}
+  }
+  return dedup.sort((a,b)=>(b.tradeObjectiveGain||0)-(a.tradeObjectiveGain||0)).slice(0,18);
+}
 function actionCandidates(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={}){
   const out=[];
   if(piecesRemaining(p).settlements>0&&canPay(p.hand,COSTS.settlement))geo.vertices.forEach((_,v)=>{if(legalSettlement(v,players,geo)&&settlementConnected(v,p,geo))out.push({type:"settlement",spot:v});});
@@ -480,7 +543,9 @@ function actionCandidates(p,players,board,geo,ports,bank,deck,targetVP,heldAward
   const aw=awards(players,geo,heldAwards),visible=p.vp+(aw.roadOwner===p.id?2:0)+(aw.armyOwner===p.id?2:0);
   if(p.development.VictoryPoint>0&&!turnState.devBought&&visible+p.development.VictoryPoint>=targetVP)out.push({type:"play",card:"Victory Point"});
   for(const give of RES)for(const get of RES){if(give===get)continue;const rate=tradeRate(p,ports,give);if((p.hand[give]||0)>=rate&&(bank[get]||0)>0)out.push({type:"trade",give,get,rate});}
-  if(players.length>2){for(const partner of players.filter(x=>x.id!==p.id&&x.bot))for(const give of RES)for(const get of RES){if(give===get)continue;if((p.hand[give]||0)<1||(partner.hand[get]||0)<1)continue;out.push({type:"playerTrade",partner:partner.id,give,get,giveAmount:1,getAmount:1});}}
+  if(players.length>2){
+    strategicTradeCandidates(p,players,board,geo,ports,bank,targetVP).forEach(a=>out.push(a));
+  }
   out.push({type:"pass"});return out;
 }
 const PORT_TIE_WINDOW=0.025;
@@ -604,6 +669,26 @@ function chooseRobberAction(p,players,board,geo,ports,bank,targetVP,heldAwards={
   }
   return best;
 }
+
+function resolveRobberSteal(players,board,geo,thiefId,tid,rng=Math.random,protectedIds=new Set()){
+  const thief=players.find(p=>p?.id===thiefId);
+  if(!thief||!Array.isArray(board)||!board[tid]||!geo?.vertexTiles?.[tid])return {players,stolen:null,victim:null,valid:false};
+  const touching=new Set(geo.vertexTiles[tid]||[]);
+  const victims=players.filter(p=>p?.id!==thiefId&&!protectedIds.has(p?.id)&&
+    (((p?.settlements||[]).some(v=>touching.has(v)))||((p?.cities||[]).some(v=>touching.has(v)))));
+  const eligible=victims.filter(p=>total(p.hand)>0);
+  if(!eligible.length)return {players,stolen:null,victim:null,valid:true};
+  const victim=eligible[Math.floor(rng()*eligible.length)];
+  const stolen=randomHeldResourceByCard(victim.hand,rng);
+  if(!stolen)return {players,stolen:null,victim:null,valid:true};
+  const next=players.map(p=>{
+    if(p.id===victim.id)return {...p,hand:{...p.hand,[stolen]:Math.max(0,(p.hand?.[stolen]||0)-1)}};
+    if(p.id===thiefId)return {...p,hand:{...p.hand,[stolen]:(p.hand?.[stolen]||0)+1}};
+    return p;
+  });
+  return {players:next,stolen,victim,valid:true};
+}
+
 function randomHeldResourceByCard(hand,rng=Math.random){
   const cards=[];RES.forEach(r=>{const count=Math.max(0,Number(hand?.[r]||0));for(let i=0;i<count;i++)cards.push(r)});
   if(!cards.length)return null;
@@ -645,4 +730,4 @@ function loadHistory(){
   }catch{return[]}
 }
 
-export {RES,PROB,makeGeometry,boardValid,makeBoard,makePorts,empty,emptyBank,total,canPay,pay,add,legalSettlement,legalInitialRoad,roadConnected,legalRoad,settlementConnected,portAt,tradeRate,productionForRoll,resolveDiceRoll,connectedRoadLength,awards,newPlayer,adjacentProduction,Production,PersonalScarcity,BoardScarcity,BankAvailability,RelativeGap,BuildingDemand,NeedProfile,spotProduction,TValue,EValue,YValue,BlockValue,UrgencyValue,RiskValue,unifiedPosition,unifiedActionScore,scoreActions,PORT_TIE_WINDOW,placementResourceValue,scarcityRankFactors,placementScore,openingPlacementScore,openingPairScore,bestOpeningPair,bestOpeningCompanion,chooseRobberAction,aiPlan,BOT_MODE_CONFIGS,BOT_ENGINE_VERSION,DEV,COSTS,PIECES,cardProbabilities,COLONIST_BASE_RULES,colonistRules,publicCardCount,publicVictoryPoints,canPlayDevelopmentCard,canBuyDevelopmentCard,friendlyRobberProtectedCore,pipelineComboBonus,expectedTurnsToCombo,tileVerts,comboHitProbability,comboCompletionValue,randomHeldResourceByCard,gameInvariantReport,BOT_DIFFICULTY_CONFIG,botDifficultyProfile,devDeck};
+export {RES,PROB,makeGeometry,boardValid,makeBoard,makePorts,empty,emptyBank,total,canPay,pay,add,legalSettlement,legalInitialRoad,roadConnected,legalRoad,settlementConnected,portAt,tradeRate,productionForRoll,resolveDiceRoll,connectedRoadLength,awards,newPlayer,adjacentProduction,Production,PersonalScarcity,BoardScarcity,BankAvailability,RelativeGap,BuildingDemand,NeedProfile,spotProduction,TValue,EValue,YValue,BlockValue,UrgencyValue,RiskValue,unifiedPosition,unifiedActionScore,scoreActions,strategicTradeCandidates,PORT_TIE_WINDOW,placementResourceValue,scarcityRankFactors,placementScore,openingPlacementScore,openingPairScore,bestOpeningPair,bestOpeningCompanion,chooseRobberAction,aiPlan,BOT_MODE_CONFIGS,BOT_ENGINE_VERSION,DEV,COSTS,PIECES,cardProbabilities,COLONIST_BASE_RULES,colonistRules,publicCardCount,publicVictoryPoints,canPlayDevelopmentCard,canBuyDevelopmentCard,friendlyRobberProtectedCore,pipelineComboBonus,expectedTurnsToCombo,tileVerts,comboHitProbability,comboCompletionValue,randomHeldResourceByCard,resolveRobberSteal,gameInvariantReport,BOT_DIFFICULTY_CONFIG,botDifficultyProfile,devDeck};

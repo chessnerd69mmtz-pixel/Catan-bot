@@ -1,7 +1,9 @@
-name: Deploy Monopoly to GitHub Pages
+name: Deploy MONOPOLY to GitHub Pages
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -15,30 +17,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  verify-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Node
+
+      - name: Setup Node (no npm cache dependency)
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 22.16.0
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Verify gameplay suite
+
+      - name: Verify source syntax
+        run: npx tsc --allowJs --jsx react-jsx --checkJs false --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler src/main.jsx
+
+      - name: Verify gameplay regressions
         run: npm run verify
+
       - name: Build
         run: npm run build
-      - name: Configure Pages
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
+
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
+
   deploy:
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: verify-and-build
     runs-on: ubuntu-latest
     environment:
       name: github-pages

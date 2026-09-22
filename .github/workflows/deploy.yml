@@ -1,4 +1,4 @@
-name: Deploy MONOPOLY to GitHub Pages
+name: Verify and publish MONOPOLY
 
 on:
   push:
@@ -8,12 +8,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: monopoly-build
   cancel-in-progress: true
 
 jobs:
@@ -22,10 +20,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node 24
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           package-manager-cache: false
@@ -45,26 +43,19 @@ jobs:
       - name: Build production bundle
         run: npm run build
 
-      - name: Configure GitHub Pages
-        if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          enablement: true
+          name: monopoly-dist-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
 
-      - name: Upload Pages artifact
+      - name: Publish dist to gh-pages
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: ./dist
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: verify-and-build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true
+          enable_jekyll: false

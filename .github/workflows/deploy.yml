@@ -22,23 +22,27 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node (no npm cache dependency)
-        uses: actions/setup-node@v4
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: 22.16.0
+          node-version: 24
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Verify source syntax
+      - name: Guard duplicate top-level function declarations
+        run: node scripts/check-duplicate-functions.mjs src/main.jsx
+
+      - name: Verify source syntax and types
         run: npx tsc --allowJs --jsx react-jsx --checkJs false --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler src/main.jsx
 
       - name: Verify gameplay regressions
         run: npm run verify
 
-      - name: Build
+      - name: Build production bundle
         run: npm run build
 
       - name: Configure GitHub Pages
@@ -47,7 +51,7 @@ jobs:
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
 

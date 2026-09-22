@@ -1382,6 +1382,7 @@ function planExpectedValue(plan,p,players,board,geo,ports,bank,targetVP){
 }
 function buildStrategicPlan(p,players,board,geo,ports,bank,targetVP,existing=null){
   const cfg=botModeConfig(players,targetVP);
+  const difficulty=botDifficultyProfile(p?.diff);
   const allPlans=[];
   if(piecesRemaining(p).cities>0&&(p.settlements||[]).length){
     for(const v of p.settlements){

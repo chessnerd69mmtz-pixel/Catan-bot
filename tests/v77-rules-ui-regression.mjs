@@ -29,4 +29,8 @@ assert.match(css,/\.colonistTradeBody,\.colonistTradeColumns/,'three-section tra
 assert.match(css,/\.colonistTradeTabs/,'bank/player tabs styling missing');
 assert.match(css,/\.referenceGame \.hxMain\{grid-template-columns:190px/,'board enlargement layout missing');
 assert.match(css,/\.referenceGame \.hxActions\{height:104px/,'action dock was not shortened to enlarge the board');
+assert.match(main,/BOT_DIFFICULTY_CONFIG/,'difficulty profiles missing');
+assert.match(main,/random PHYSICAL card/,'weighted physical-card robber missing');
+assert.match(main,/ENGINE INTEGRITY WARNING/,'runtime integrity banner missing');
+assert.match(main,/engineActionBreakdown/,'analysis breakdown missing');
 console.log('V77 RULES/UI REGRESSION PASSED — fair dice, one-card random robber theft, placement tweaks, Colonist-inspired trade hub, and larger board layout.');

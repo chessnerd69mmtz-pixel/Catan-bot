@@ -36,6 +36,15 @@ const BOT_DEEP_ACTION_LIMIT=32;
 const BOT_OPENING_CANDIDATES=24;
 const BOT_OPENING_PAIR_BUDGET_MS=320;
 const BOT_HARD_STOP_MS=4800;
+
+// Difficulty calibration: search breadth, response sensitivity, opening depth, and controlled noise.
+const BOT_DIFFICULTY_CONFIG={
+  Easy:{key:"Easy",candidateScale:.58,lookaheadTop:2,responseWeight:.045,noise:.18,openingBudgetMultiplier:.55,futureCandidates:6},
+  Medium:{key:"Medium",candidateScale:.78,lookaheadTop:3,responseWeight:.075,noise:.085,openingBudgetMultiplier:.78,futureCandidates:8},
+  Hard:{key:"Hard",candidateScale:1,lookaheadTop:4,responseWeight:.12,noise:.025,openingBudgetMultiplier:1,futureCandidates:12},
+  Impossible:{key:"Impossible",candidateScale:1.28,lookaheadTop:6,responseWeight:.18,noise:0,openingBudgetMultiplier:1.2,futureCandidates:16}
+};
+function botDifficultyProfile(diff){return BOT_DIFFICULTY_CONFIG[diff]||BOT_DIFFICULTY_CONFIG.Medium;}
 const BOT_HAND_PRESSURE_THRESHOLD=9;
 const BOT_HAND_PRESSURE_BASE=8;
 const BOT_SETTLEMENT_CANDIDATES=30;
@@ -1343,7 +1352,7 @@ function buildStrategicPlan(p,players,board,geo,ports,bank,targetVP,existing=nul
   }
   if(piecesRemaining(p).settlements>0){
     const legal=[];for(let v=0;v<geo.vertices.length;v++)if(legalSettlement(v,players,geo))legal.push(v);
-    const ranked=legal.map(v=>({v,s:quickSpotValue(v,p,players,board,geo,ports,bank,targetVP,cfg)})).sort((a,b)=>b.s-a.s).slice(0,12);
+    const ranked=legal.map(v=>({v,s:quickSpotValue(v,p,players,board,geo,ports,bank,targetVP,cfg)})).sort((a,b)=>b.s-a.s).slice(0,difficulty.futureCandidates);
     for(const {v} of ranked){
       const path=settlementConnected(v,p,geo)?[]:strategicRoadPathToSettlement(v,p,players,geo);if(path===null)continue;
       const expansion=openingExpansionScore(v,p,players,geo);
@@ -1727,28 +1736,65 @@ function chooseRobberAction(p,players,board,geo,ports,bank,targetVP,memorySnapsh
   return best;
 }
 function nearPerfectBotPlan(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={}){
-  const scored=scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState).filter(a=>a.type!=='pass'&&Number.isFinite(a.score));if(!scored.length)return null;
-  const deadline=turnState.deadline||0,top=scored.slice(0,4);let best=null;
+  const difficulty=botDifficultyProfile(p?.diff);
+  const raw=scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState).filter(a=>a.type!=='pass'&&Number.isFinite(a.score));
+  if(!raw.length)return null;
+  const scored=raw.map(a=>{
+    const scale=Math.max(10,Math.abs(a.score||0));
+    const noise=(Math.random()-.5)*2*difficulty.noise*scale;
+    return {...a,difficultyScore:a.score+noise};
+  }).sort((a,b)=>b.difficultyScore-a.difficultyScore);
+  const deadline=turnState.deadline||0,top=scored.slice(0,difficulty.lookaheadTop);
+  let best=null;
   for(const a of top){
-    const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();if(deadline&&now>=deadline-80)break;
-    let score=a.score;
-    if((a.type!=='trade'&&a.type!=='playerTrade')&&top.indexOf(a)<2)score-=opponentResponseValue(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)*.08;
+    const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();
+    if(deadline&&now>=deadline-BOT_DEEP_SEARCH_RESERVE_MS)break;
+    let score=a.difficultyScore;
+    if(a.type!=='trade'&&a.type!=='playerTrade'){
+      const responseScale=difficulty.responseWeight*(top.indexOf(a)<2?1.2:.8);
+      score-=opponentResponseValue(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)*responseScale;
+    }
     if(a.type==='settlement'&&turnState.strategicPlan?.type==='settlement'&&a.spot===turnState.strategicPlan.target)score+=40;
     if(a.type==='road'&&turnState.strategicPlan?.type==='settlement'&&(turnState.strategicPlan.path||[]).includes(a.spot))score+=28;
-    const candidate={...a,score};if(!best||candidate.score>best.score)best=candidate;
+    const candidate={...a,score};
+    if(!best||candidate.score>best.score)best=candidate;
   }
   if(!best)return null;
-  best.engineTop3=scored.slice(0,3).map(a=>({type:a.type,spot:a.spot,card:a.card,partner:a.partner,score:a.score,roads:a.roads,actionKey:decisionKeyForEngine(a)}));
-  best.planValue=best.score;return best;
+  best.engineTop3=scored.slice(0,3).map(a=>({type:a.type,spot:a.spot,card:a.card,partner:a.partner,score:a.score,roads:a.roads,actionKey:decisionKeyForEngine(a),difficulty:difficulty.key}));
+  best.planValue=best.score;
+  best.botDifficulty=difficulty.key;
+  return best;
 }
 function staticStrategicValue(p,players,board,geo,ports,bank,deck,targetVP,heldAwards){
   const cfg=botModeConfig(players,targetVP),openVP=openVictoryPoints(p,players,geo,heldAwards),prod=botProduction(p,board,geo),totalProd=Object.values(prod).reduce((a,b)=>a+b,0),need=NeedProfile(p,players,board,geo,bank,cfg).need,flexible=RES.reduce((a,r)=>a+(p.hand?.[r]||0)*need[r],0),award=awards(players,geo,heldAwards),awardVP=(award.roadOwner===p.id?2:0)+(award.armyOwner===p.id?2:0),road=connectedRoadLength(p,geo,players);return openVP*18+awardVP*10+totalProd*18+flexible*1.8+road*.08+devCount(p)*.9;
 }
 /* ==================== END V75 OVERRIDES ==================== */
 
+function gameInvariantReport(players,board,bank,deck,geo){
+  const errors=[];
+  if(!Array.isArray(players)||!players.length)errors.push("No players are present");
+  if(!Array.isArray(board)||board.length!==19)errors.push("Board must contain exactly 19 hexes");
+  if(Array.isArray(board)&&board.filter(t=>t?.robber).length!==1)errors.push("Board must contain exactly one robber");
+  const occupied=new Map(),roadOwners=new Map();
+  (players||[]).forEach(p=>{
+    const placed=[...(p?.settlements||[]),...(p?.cities||[])];
+    if(placed.length>5)errors.push(`${p?.name||p?.id} has more than 5 housing pieces`);
+    if((p?.cities||[]).length>4)errors.push(`${p?.name||p?.id} has more than 4 cities`);
+    if((p?.roads||[]).length>15)errors.push(`${p?.name||p?.id} has more than 15 roads`);
+    if((p?.development?.playedKnights||0)>14)errors.push(`${p?.name||p?.id} has too many played Knights`);
+    for(const v of placed){if(occupied.has(v))errors.push(`Intersection ${v} has multiple owners`);else occupied.set(v,p?.name||String(p?.id));if(geo&&!geo.vertices?.[v])errors.push(`Invalid housing vertex ${v}`);}
+    for(const e of p?.roads||[]){if(roadOwners.has(e))errors.push(`Road ${e} has multiple owners`);else roadOwners.set(e,p?.name||String(p?.id));if(geo&&!geo.edges?.[e])errors.push(`Invalid road edge ${e}`);}
+    for(const r of RES)if((p?.hand?.[r]||0)<0)errors.push(`Negative ${r}`);
+  });
+  if(bank)for(const r of RES){const b=Number(bank[r]||0);if(b<0||b>19)errors.push(`Bank ${r} out of range`);const held=(players||[]).reduce((n,p)=>n+Math.max(0,Number(p?.hand?.[r]||0)),0);if(Math.abs(b+held-19)>1e-9)errors.push(`Resource ledger mismatch for ${r}`);}
+  if(Array.isArray(deck)&&deck.length>25)errors.push("Development deck exceeds 25 cards");
+  return {ok:errors.length===0,errors};
+}
 function App(){
   const geo=useMemo(makeGeometry,[]);
   const [screen,setScreen]=useState("home");
+  const [integrityErrors,setIntegrityErrors]=useState([]);
+  const integrityStampRef=useRef("");
   const [mode,setMode]=useState(10);
   const [enginePlayers,setEnginePlayers]=useState(()=>makeEnginePlayers());
   const [engineBoard,setEngineBoard]=useState(null);
@@ -1889,6 +1935,17 @@ function App(){
   const handleChatSubmit=e=>{e.preventDefault();const t=chatInput.trim();if(!t)return;sendChat(t);setChatInput("");};
   const toggleFullscreen=()=>{try{if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();}catch{}};
   const appendLog=x=>{const entry={id:`log-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,turn:turnNumber,text:String(x)};const next=[entry,...logRef.current].slice(0,2000);logRef.current=next;setLog(next);};
+  useEffect(()=>{
+    if(!["setupBoard","playing"].includes(screen)||!players.length||!board?.length)return;
+    const report=gameInvariantReport(players,board,bank,deck,geo);
+    setIntegrityErrors(report.errors);
+    const signature=report.errors.join("|");
+    if(report.errors.length&&signature!==integrityStampRef.current){
+      integrityStampRef.current=signature;
+      console.error("MONOPOLY ENGINE INTEGRITY",report.errors);
+    }
+    if(!report.errors.length)integrityStampRef.current="";
+  },[screen,players,board,bank,deck,geo]);
   const prependSetupLog=x=>{const entry={id:`setup-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,turn:turnNumber,text:String(x)};const next=[entry,...logRef.current].slice(0,2000);logRef.current=next;setLog(next);};
   const visibleActivityLog = (winner||drawn) ? log : log.filter(x=>x.turn>=Math.max(1,turnNumber-2));
   const activityTurnGroups = visibleActivityLog.reduce((groups,entry)=>{const key=Number(entry.turn||1);let g=groups.find(x=>x.turn===key);if(!g){g={turn:key,entries:[]};groups.push(g);}g.entries.push(entry);return groups;},[]);
@@ -1937,6 +1994,7 @@ function App(){
       const cutoff=Math.max(0,turnSequenceRef.current-5);
       return all.filter(x=>x.sequence>=cutoff);
     }
+    if(bot.diff==="Easy")return[];
     return all.slice(-1);
   };
   const memoryAwarePlayers=(bot,ps)=>{
@@ -2106,7 +2164,8 @@ function App(){
   };
   const autoBotSetup=()=>{
     if(screen!=="setupBoard"||!currentSetupPlayer?.bot)return;const p=currentSetupPlayer,firstRound=p.settlements.length===0;
-    const pair=firstRound?bestOpeningPair(p,players,board,geo,ports,bank,targetVP,1100):bestOpeningCompanion(p.settlements[0],p,players,board,geo,ports,bank,targetVP,700);
+    const difficulty=botDifficultyProfile(p.diff);
+    const pair=firstRound?bestOpeningPair(p,players,board,geo,ports,bank,targetVP,Math.round(1100*difficulty.openingBudgetMultiplier)):bestOpeningCompanion(p.settlements[0],p,players,board,geo,ports,bank,targetVP,Math.round(700*difficulty.openingBudgetMultiplier));
     if(firstRound&&pair)setPvOpeningPlan(pair);
     const target=pair?.second!=null&&p.settlements.length===1?pair.second:pair?.first;let v=target;
     if(v==null){const cache=makeScoreCache(players,board,geo,ports,bank,targetVP);const candidates=geo.vertices.map((_,i)=>({i,s:openingPlacementScore(i,p,players,board,geo,ports,bank,targetVP,cache)})).filter(x=>Number.isFinite(x.s)).sort((a,b)=>b.s-a.s);v=candidates[0]?.i;}if(v==null)return;
@@ -2394,9 +2453,14 @@ function App(){
   }
 
   function randomHeldResource(victim){
-    const held=RES.filter(r=>(victim?.hand?.[r]||0)>0);
-    if(!held.length)return null;
-    return held[Math.floor(Math.random()*held.length)];
+    // A robber steals one random PHYSICAL card, not one random resource type.
+    const cards=[];
+    RES.forEach(r=>{
+      const count=Math.max(0,Number(victim?.hand?.[r]||0));
+      for(let i=0;i<count;i++)cards.push(r);
+    });
+    if(!cards.length)return null;
+    return cards[Math.floor(Math.random()*cards.length)];
   }
   function chooseRobberResourceForBot(_thief,victim,_currentPlayers,_currentBoard,_currentBank){
     return randomHeldResource(victim);
@@ -3003,6 +3067,7 @@ function App(){
         </div>
       </header>
 
+      {integrityErrors.length>0&&<div className="hxIntegrityBanner" role="status"><b>ENGINE INTEGRITY WARNING</b><span>{integrityErrors.slice(0,3).join(" · ")}</span></div>}
       <main className="hxMain">
         <aside className="hxLeft">
           <section className="hxPanel hxPlayers">

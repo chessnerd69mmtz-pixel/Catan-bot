@@ -186,7 +186,14 @@ function productionForRoll(players,board,geo,sum,bank){
 }
 function resolveDiceRoll(players,board,geo,sum,bank){if(sum===7)return{players,bank,grants:players.map(()=>empty()),demand:players.map(()=>empty()),seven:true};return{...productionForRoll(players,board,geo,sum,bank),seven:false};}
 function cardProbabilities(deck){const counts=Object.fromEntries(Object.keys(DEV).map(c=>[c,0]));deck.forEach(c=>counts[c]++);const remaining=deck.length;return Object.fromEntries(Object.keys(DEV).map(c=>{const count=counts[c],prob=remaining?count/remaining:0,draws=Math.min(3,remaining);let miss=1;for(let i=0;i<draws;i++)miss*=Math.max(0,remaining-count-i)/Math.max(1,remaining-i);return[c,{count,prob,within3:1-miss}]}));}
-const BOT_ENGINE_VERSION="v24-automatic-roll-production";
+const BOT_DIFFICULTY_CONFIG={
+  Easy:{key:"Easy",candidateScale:.58,lookaheadTop:2,responseWeight:.045,noise:.18,openingBudgetMultiplier:.55,futureCandidates:6},
+  Medium:{key:"Medium",candidateScale:.78,lookaheadTop:3,responseWeight:.075,noise:.085,openingBudgetMultiplier:.78,futureCandidates:8},
+  Hard:{key:"Hard",candidateScale:1,lookaheadTop:4,responseWeight:.12,noise:.025,openingBudgetMultiplier:1,futureCandidates:12},
+  Impossible:{key:"Impossible",candidateScale:1.28,lookaheadTop:6,responseWeight:.18,noise:0,openingBudgetMultiplier:1.2,futureCandidates:16}
+};
+function botDifficultyProfile(diff){return BOT_DIFFICULTY_CONFIG[diff]||BOT_DIFFICULTY_CONFIG.Medium;}
+const BOT_ENGINE_VERSION="v30-difficulty-calibrated-invariant-guard";
 const BOT_MODE_CONFIGS={
   standard4p10:{
     key:"standard4p10",targetVP:10,leaderMultiplier:1.5,gameLengthFactor:1.0,beta:0.25,bankScarcity:1,
@@ -597,6 +604,30 @@ function chooseRobberAction(p,players,board,geo,ports,bank,targetVP,heldAwards={
   }
   return best;
 }
+function randomHeldResourceByCard(hand,rng=Math.random){
+  const cards=[];RES.forEach(r=>{const count=Math.max(0,Number(hand?.[r]||0));for(let i=0;i<count;i++)cards.push(r)});
+  if(!cards.length)return null;
+  return cards[Math.floor(rng()*cards.length)];
+}
+function gameInvariantReport(players,board,bank,deck,geo){
+  const errors=[];
+  if(!Array.isArray(players)||!players.length)errors.push("No players are present");
+  if(!Array.isArray(board)||board.length!==19)errors.push("Board must contain exactly 19 hexes");
+  if(Array.isArray(board)&&board.filter(t=>t?.robber).length!==1)errors.push("Board must contain exactly one robber");
+  const occupied=new Map(),roadOwners=new Map();
+  (players||[]).forEach(p=>{
+    const placed=[...(p?.settlements||[]),...(p?.cities||[])];
+    if(placed.length>5)errors.push(`${p?.name||p?.id} has more than 5 housing pieces`);
+    if((p?.cities||[]).length>4)errors.push(`${p?.name||p?.id} has more than 4 cities`);
+    if((p?.roads||[]).length>15)errors.push(`${p?.name||p?.id} has more than 15 roads`);
+    for(const v of placed){if(occupied.has(v))errors.push(`Intersection ${v} has multiple owners`);else occupied.set(v,p?.name||String(p?.id));if(geo&&!geo.vertices?.[v])errors.push(`Invalid housing vertex ${v}`);}
+    for(const e of p?.roads||[]){if(roadOwners.has(e))errors.push(`Road ${e} has multiple owners`);else roadOwners.set(e,p?.name||String(p?.id));if(geo&&!geo.edges?.[e])errors.push(`Invalid road edge ${e}`);}
+    for(const r of RES)if((p?.hand?.[r]||0)<0)errors.push(`Negative ${r}`);
+  });
+  if(bank)for(const r of RES){const b=Number(bank[r]||0);if(b<0||b>19)errors.push(`Bank ${r} out of range`);const held=(players||[]).reduce((n,p)=>n+Math.max(0,Number(p?.hand?.[r]||0)),0);if(Math.abs(b+held-19)>1e-9)errors.push(`Resource ledger mismatch for ${r}`);}
+  if(Array.isArray(deck)&&deck.length>25)errors.push("Development deck exceeds 25 cards");
+  return {ok:errors.length===0,errors};
+}
 function aiPlan(p,players,board,geo,deck,ports,targetVP,bank=emptyBank(),heldAwards={roadOwner:null,armyOwner:null},turnState={}){const scored=scoreActions(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState);const best=scored.find(a=>a.type!=="pass")||{type:"pass",score:0};return{...best,reason:decisionReason(best,p,players,board,geo,ports,bank,targetVP)};}
 function decisionReason(action,p,players,board,geo,ports,bank,targetVP){if(action.type==="settlement"){const nf=NeedProfile(p,players,board,geo,bank,botModeConfig(players,targetVP)),sp=spotProduction(action.spot,board,geo),parts=RES.filter(r=>sp[r]>0).sort((a,b)=>sp[b]*nf.need[b]-sp[a]*nf.need[a]).slice(0,3).map(r=>`+P(${r} ${(sp[r]*36).toFixed(1)}) +Need(${nf.need[r].toFixed(2)})`);if(portAt(action.spot,ports)&&action.portEligibleForTie)parts.push(`+Port tie-break(${portAt(action.spot,ports).type})`);return parts.join(" ")+` => V=${action.score.toFixed(2)}, chosen`;}if(action.type==="city")return `+VP(1) +production doubled at ${action.spot} => V=${action.score.toFixed(2)}, chosen`;if(action.type==="road")return `+E(expansion) +Y(road network) => V=${action.score.toFixed(2)}, chosen`;if(action.type==="trade")return `+T(port/bank conversion) ${LABEL[action.give]}→${LABEL[action.get]} => V=${action.score.toFixed(2)}, chosen`;if(action.type==="buyDev")return `+cardExpectedUtility => V=${action.score.toFixed(2)}, chosen`;if(action.type==="play")return `+${action.card} strategic value => V=${action.score.toFixed(2)}, chosen`;return `No positive action => pass`}
 function actionLabel(a){return a?.type==="buyDev"?"Development card":a?.type==="settlement"?"Settlement":a?.type==="road"?"Road":a?.type==="city"?"City":a?.type==="trade"||a?.type==="playerTrade"?"Trade":a?.type==="play"?`Play ${a.card}`:a?.type||"Pass";}
@@ -614,4 +645,4 @@ function loadHistory(){
   }catch{return[]}
 }
 
-export {RES,PROB,makeGeometry,boardValid,makeBoard,makePorts,empty,emptyBank,total,canPay,pay,add,legalSettlement,legalInitialRoad,roadConnected,legalRoad,settlementConnected,portAt,tradeRate,productionForRoll,resolveDiceRoll,connectedRoadLength,awards,newPlayer,adjacentProduction,Production,PersonalScarcity,BoardScarcity,BankAvailability,RelativeGap,BuildingDemand,NeedProfile,spotProduction,TValue,EValue,YValue,BlockValue,UrgencyValue,RiskValue,unifiedPosition,unifiedActionScore,scoreActions,PORT_TIE_WINDOW,placementResourceValue,scarcityRankFactors,placementScore,openingPlacementScore,openingPairScore,bestOpeningPair,bestOpeningCompanion,chooseRobberAction,aiPlan,BOT_MODE_CONFIGS,BOT_ENGINE_VERSION,DEV,COSTS,PIECES,cardProbabilities,COLONIST_BASE_RULES,colonistRules,publicCardCount,publicVictoryPoints,canPlayDevelopmentCard,canBuyDevelopmentCard,friendlyRobberProtectedCore,pipelineComboBonus,expectedTurnsToCombo,tileVerts,comboHitProbability,comboCompletionValue};
+export {RES,PROB,makeGeometry,boardValid,makeBoard,makePorts,empty,emptyBank,total,canPay,pay,add,legalSettlement,legalInitialRoad,roadConnected,legalRoad,settlementConnected,portAt,tradeRate,productionForRoll,resolveDiceRoll,connectedRoadLength,awards,newPlayer,adjacentProduction,Production,PersonalScarcity,BoardScarcity,BankAvailability,RelativeGap,BuildingDemand,NeedProfile,spotProduction,TValue,EValue,YValue,BlockValue,UrgencyValue,RiskValue,unifiedPosition,unifiedActionScore,scoreActions,PORT_TIE_WINDOW,placementResourceValue,scarcityRankFactors,placementScore,openingPlacementScore,openingPairScore,bestOpeningPair,bestOpeningCompanion,chooseRobberAction,aiPlan,BOT_MODE_CONFIGS,BOT_ENGINE_VERSION,DEV,COSTS,PIECES,cardProbabilities,COLONIST_BASE_RULES,colonistRules,publicCardCount,publicVictoryPoints,canPlayDevelopmentCard,canBuyDevelopmentCard,friendlyRobberProtectedCore,pipelineComboBonus,expectedTurnsToCombo,tileVerts,comboHitProbability,comboCompletionValue,randomHeldResourceByCard,gameInvariantReport,BOT_DIFFICULTY_CONFIG,botDifficultyProfile};

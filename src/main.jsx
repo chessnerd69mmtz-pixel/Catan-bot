@@ -106,6 +106,7 @@ const pay=(h,c)=>{const x={...h};Object.entries(c).forEach(([r,n])=>x[r]=(x[r]||
 const add=(h,c)=>{const x={...h};Object.entries(c).forEach(([r,n])=>x[r]=(x[r]||0)+n);return x};
 const shuffle=a=>{const x=[...a];for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]];}return x};
 const fmtDate=d=>new Date(d).toLocaleString([], {dateStyle:"medium",timeStyle:"short"});
+const fmtDuration=seconds=>{const s=Math.max(0,Number(seconds)||0);if(!s)return "—";const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?h+"h "+String(m).padStart(2,"0")+"m":m?m+"m "+String(sec).padStart(2,"0")+"s":sec+"s";};
 
 function makeGeometry(){
   const centers=[];
@@ -966,29 +967,43 @@ const UI_THEMES={
   Orange:{cyan:"#ffb347",green:"#ffd166",blue:"#ff9f43",purple:"#ff8c42",pink:"#ff7849",yellow:"#ffe39a",border:"#87502a"}
 };
 const ANALYSIS_CLASSIFICATIONS=[
-  {key:"blunder",icon:"💥",label:"BLUNDER",min:-Infinity,max:-0.08},
-  {key:"mistake",icon:"❓",label:"MISTAKE",min:-0.08,max:-0.03},
-  {key:"inaccuracy",icon:"🟡",label:"INACCURACY",min:-0.03,max:0.015},
-  {key:"good",icon:"🟢",label:"GOOD",min:0.015,max:0.035},
-  {key:"great",icon:"⭐",label:"GREAT",min:0.035,max:0.08},
-  {key:"brilliant",icon:"💎",label:"BRILLIANT",min:0.08,max:Infinity}
+  {key:"blunder",icon:"💥",label:"BLUNDER"},
+  {key:"mistake",icon:"❓",label:"MISTAKE"},
+  {key:"inaccuracy",icon:"🟡",label:"INACCURACY"},
+  {key:"good",icon:"🟢",label:"GOOD"},
+  {key:"excellent",icon:"⭐",label:"EXCELLENT"},
+  {key:"brilliant",icon:"💎",label:"BRILLIANT"}
 ];
-function classifyAnalysisMove(delta,actionType="") {
-  const d=Number(delta)||0;
-  const base=ANALYSIS_CLASSIFICATIONS.find(x=>d>=x.min&&d<x.max)||ANALYSIS_CLASSIFICATIONS[2];
-  if(base.key==="brilliant"&&["robber","play Monopoly"].some(x=>String(actionType).includes(x)))return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="great");
-  return base;
+const ANALYSIS_ACCURACY_WEIGHT={blunder:0,mistake:20,inaccuracy:50,good:75,excellent:92,brilliant:100};
+function analysisMoveIsBuild(action=""){return /settlement|city|road/i.test(String(action));}
+function classifyAnalysisMove({loss=0,delta=0,action="",gameWinning=false}={}){
+  const normalizedLoss=Math.max(0,Math.min(1,Number(loss)||0));
+  if(gameWinning&&!analysisMoveIsBuild(action)&&normalizedLoss<=0.015)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="brilliant");
+  if(normalizedLoss<=0.015)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="excellent");
+  if(normalizedLoss<=0.05)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="good");
+  if(normalizedLoss<=0.12)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="inaccuracy");
+  if(normalizedLoss<=0.22)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="mistake");
+  return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="blunder");
 }
-
-const ANALYSIS_ACCURACY_WEIGHT={blunder:0,mistake:20,inaccuracy:50,good:75,great:90,brilliant:100};
+function analysisMoveClassification(decision,frame){
+  const loss=decision?.engineLoss!=null?decision.engineLoss:(frame?.engineLoss!=null?frame.engineLoss:Math.max(0,-Number(frame?.delta||0)));
+  return classifyAnalysisMove({loss,delta:frame?.delta||0,action:decision?.action||frame?.action||"",gameWinning:!!decision?.gameWinning});
+}
+function analysisMovesFromFrames(frames=[]){
+  return (frames||[]).flatMap(frame=>{
+    if(Array.isArray(frame.decisions)&&frame.decisions.length)return frame.decisions.map(d=>({...d,turn:frame.turn,playerId:d.playerId??frame.playerId,playerName:d.playerName??frame.playerName,isBot:d.bot??frame.isBot,classification:d.classification||analysisMoveClassification(d,frame),delta:frame.delta,afterOdds:frame.afterOdds,beforeOdds:frame.beforeOdds}));
+    return frame?.classification?.key?[{...frame}]:[];
+  });
+}
 function analysisAccuracy(frames,playerId=null){
-  const usable=(frames||[]).filter(f=>f?.classification?.key && (playerId==null||f.playerId===playerId));
+  const usable=analysisMovesFromFrames(frames).filter(f=>f?.classification?.key && (playerId==null||f.playerId===playerId));
   if(!usable.length)return null;
   return Math.round(usable.reduce((sum,f)=>sum+(ANALYSIS_ACCURACY_WEIGHT[f.classification.key]??50),0)/usable.length);
 }
 function analysisRoleStats(frames,players){
+  const moves=analysisMovesFromFrames(frames);
   const out={overall:analysisAccuracy(frames),players:{}};
-  for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(frames,p.id),turns:(frames||[]).filter(f=>f.playerId===p.id&&f.classification).length};
+  for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(moves,p.id),turns:moves.filter(f=>f.playerId===p.id).length};
   return out;
 }
 function themeVars(name){
@@ -1108,8 +1123,9 @@ function decisionKeyForEngine(a){
   if(a.type==="play")return `play:${a.card}`;
   return a.type;
 }
-function makeEnginePlayers(){
-  return [newPlayer(0,"Side A",false,"Human"),newPlayer(1,"Side B",false,"Human")];
+function makeEnginePlayers(count=2){
+  const names=count===4?["Player 1","Player 2","Player 3","Player 4"]:["Side A","Side B"];
+  return names.map((name,id)=>newPlayer(id,name,false,"Human"));
 }
 function makeEngineBoard(geo,settings){return makeBoard(geo,settings);}
 
@@ -1871,6 +1887,7 @@ function App(){
   const [integrityErrors,setIntegrityErrors]=useState([]);
   const integrityStampRef=useRef("");
   const [mode,setMode]=useState(10);
+  const [enginePlayerCount,setEnginePlayerCount]=useState(2);
   const [enginePlayers,setEnginePlayers]=useState(()=>makeEnginePlayers());
   const [engineBoard,setEngineBoard]=useState(null);
   const [enginePorts,setEnginePorts]=useState([]);
@@ -1994,7 +2011,7 @@ function App(){
     const onKey=(e)=>{
       if(tab!=="historyAnalyze"||!analysisReplay)return;
       const k=e.key;
-      if(k==="\\"||k==="]"||k==="ArrowRight"){e.preventDefault();setAnalysisIndex(i=>Math.min((analysisReplay.analysisFrames?.length||1)-1,i+1));}
+      if(k==="\\"||k==="]"||k==="ArrowRight"){e.preventDefault();setAnalysisIndex(i=>Math.min((analysisMovesFromFrames(analysisReplay.analysisFrames||[]).length||1)-1,i+1));}
       else if(k==="/"||k==="["||k==="ArrowLeft"){e.preventDefault();setAnalysisIndex(i=>Math.max(0,i-1));}
     };
     window.addEventListener("keydown",onKey);
@@ -2127,8 +2144,7 @@ function App(){
     pending.decisionStart=decisionsRef.current.length;
   };
   const finalizeAnalysisTurn=({ps,bd,pr,bk,dk,ha,summary=""})=>{
-    const pending=analysisTurnRef.current;
-    if(!pending||!ps?.length||!bd?.length)return;
+    const pending=analysisTurnRef.current;if(!pending||!ps?.length||!bd?.length)return;
     const afterOdds=engineWinLikelihood(ps,bd,geo,pr||[],bk||emptyBank(),targetVP);
     const decisionsForTurn=decisionsRef.current.slice(pending.decisionStart).filter(d=>d.turn===pending.turn&&d.playerId===pending.playerId);
     const actions=decisionsForTurn.map(d=>d.action).filter(Boolean);
@@ -2138,15 +2154,17 @@ function App(){
     const meBefore=pending.beforeOdds.find(x=>x.id===pending.playerId)?.prob??0.5;
     const meAfter=afterOdds.find(x=>x.id===pending.playerId)?.prob??meBefore;
     const delta=meAfter-meBefore;
-    const classification=classifyAnalysisMove(delta,mainAction);
-    const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta,classification,beforeOdds:clone(pending.beforeOdds),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:{players:clone(ps),board:clone(bd),ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null})},decisions:clone(decisionsForTurn),summary};
-    analysisFramesRef.current=[...analysisFramesRef.current,frame];
-    analysisTurnRef.current=null;
+    const frameLoss=decisionsForTurn.length?Math.min(...decisionsForTurn.map(d=>Number.isFinite(d.engineLoss)?d.engineLoss:1)):Math.max(0,-delta);
+    const frameClassification=classifyAnalysisMove({loss:frameLoss,delta,action:mainAction,gameWinning:false});
+    const classifiedDecisions=decisionsForTurn.map(d=>({...d,classification:analysisMoveClassification(d,{delta,engineLoss:d.engineLoss})}));
+    const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta,engineLoss:frameLoss,classification:frameClassification,beforeOdds:clone(pending.beforeOdds),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:{players:clone(ps),board:clone(bd),ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null})},decisions:classifiedDecisions,moves:classifiedDecisions,summary};
+    analysisFramesRef.current=[...analysisFramesRef.current,frame];analysisTurnRef.current=null;
   };
 
   const startEngineSetup=()=>{
     const b=makeEngineBoard(geo,mapSettings);
-    setEnginePlayers(makeEnginePlayers());
+    setEnginePlayerCount(2);
+    setEnginePlayers(makeEnginePlayers(2));
     setEngineBoard(b);
     setEnginePorts(makePorts(geo));
     setEngineBank(emptyBank());
@@ -2156,7 +2174,7 @@ function App(){
     setEngineSelectedTile(null);
     setEnginePieceMode("inspect");
     setEngineSelectedPiece(null);
-    setEngineTargetVP(isPVBot?15:10);
+    setEngineTargetVP(15);
     setEngineHeldAwards({roadOwner:null,armyOwner:null});
     setEngineDevCounts({...DEV});
     setEngineAnalysis(false);
@@ -2196,7 +2214,7 @@ function App(){
   };
   const removeEnginePiece=(kind,id)=>{setEnginePlayers(ps=>ps.map(p=>p.id===engineActive?{...p,[kind]:p[kind].filter(x=>x!==id)}:p));setEngineSelectedPiece(null);};
   const runEngineAnalysis=()=>setEngineAnalysis(true);
-  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers());setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
+  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers(enginePlayerCount));setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(enginePlayerCount===2?15:10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
 
   const startGame=()=>{
     if(musicEnabled&&!musicCleanupRef.current){try{musicCleanupRef.current=createViolinLoop();}catch{}}
@@ -2284,11 +2302,30 @@ function App(){
   },[screen,setupRound,setupIndex,currentSetupPlayer?.id,gameStarted]);
   useEffect(()=>{if(screen!=="setupBoard"||!currentSetupPlayer?.bot)return;const timer=setTimeout(autoBotSetup,0);return()=>clearTimeout(timer)},[screen,setupIndex,setupRound,players]);
 
-  const decisionKey=a=>{if(!a)return"pass";if(["settlement","road","city"].includes(a.type))return `${a.type}:${a.spot}`;if(a.type==="trade")return `trade:${a.give}:${a.get}:${a.rate}`;if(a.type==="playerTrade")return `playerTrade:${a.partner}:${JSON.stringify(a.giveBundle||{[a.give]:a.giveAmount})}:${JSON.stringify(a.getBundle||{[a.get]:a.getAmount})}`;if(a.type==="play")return `play:${a.card}`;return a.type;};
-  const recordDecision=(player,action)=>{if(!player.bot&&board){const rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards);const item={turn:turnNumber,playerId:player.id,playerName:player.name,action:actionLabel(action),recommended:actionLabel(rec),actionKey:decisionKey(action),recommendedKey:decisionKey(rec),match:decisionKey(action)===decisionKey(rec)};decisionsRef.current=[...decisionsRef.current,item];setDecisions(decisionsRef.current);}};
+  const decisionKey=a=>{
+    if(!a)return"pass";
+    if(["settlement","road","city"].includes(a.type))return a.type+":"+a.spot;
+    if(a.type==="trade")return "trade:"+a.give+":"+a.get+":"+a.rate;
+    if(a.type==="playerTrade")return "playerTrade:"+a.partner+":"+JSON.stringify(a.giveBundle||{[a.give]:a.giveAmount})+":"+JSON.stringify(a.getBundle||{[a.get]:a.getAmount});
+    if(a.type==="play")return "play:"+a.card;
+    return a.type;
+  };
+  const recordDecision=(player,action)=>{
+    if(!player?.bot&&board){
+      const rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards);
+      let scored=[];try{scored=scoreActions(player,players,board,geo,ports,bank,deck,targetVP,heldAwards,{botAutoplay:false});}catch{}
+      const chosen=scored.find(x=>decisionKeyForEngine(x)===decisionKeyForEngine(action));
+      const bestScore=Number.isFinite(rec?.score)?Number(rec.score):(scored[0]?.score??0);
+      const chosenScore=Number.isFinite(chosen?.score)?Number(chosen.score):bestScore;
+      const scale=Math.max(20,Math.abs(bestScore)+20);
+      const engineLoss=Math.max(0,Math.min(1,(bestScore-chosenScore)/scale));
+      const item={turn:turnNumber,playerId:player.id,playerName:player.name,action:actionLabel(action),recommended:actionLabel(rec),actionKey:decisionKey(action),recommendedKey:decisionKey(rec),match:decisionKey(action)===decisionKey(rec),engineBestScore:bestScore,engineChosenScore:chosenScore,engineLoss};
+      decisionsRef.current=[...decisionsRef.current,item];setDecisions(decisionsRef.current);
+    }
+  };
   const checkWin=(ps,turnPlayerId=turn)=>{const a=awards(ps,geo,heldAwards);const actor=ps.find(p=>p.id===turnPlayerId);return actor&&actor.vp+(a.roadOwner===actor.id?2:0)+(a.armyOwner===actor.id?2:0)>=targetVP?actor:null;};
-  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{if(winner||drawn)return;finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});const finalAwards=awards(finalPlayers,geo,finalHeldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"win",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current)};const next=[snap,...history].slice(0,30);setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
-  const finishDraw=(reason="Draw accepted.")=>{if(winner||drawn)return;appendLog(reason);showDuelNotice("accepted",reason);finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});const finalAwards=awards(players,geo,heldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,players),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"draw",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current)};const next=[snap,...history].slice(0,30);setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
+  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{if(winner||drawn)return;const lastMove=decisionsRef.current[decisionsRef.current.length-1];if(lastMove&&lastMove.playerId===winnerPlayer?.id)lastMove.gameWinning=true;finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});const finalAwards=awards(finalPlayers,geo,finalHeldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"win",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player"};const next=[snap,...history].slice(0,30);setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
+  const finishDraw=(reason="Draw accepted.")=>{if(winner||drawn)return;appendLog(reason);showDuelNotice("accepted",reason);finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});const finalAwards=awards(players,geo,heldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,players),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"draw",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player"};const next=[snap,...history].slice(0,30);setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
   const resignMatch=()=>{if(!isPVBot||!active||active.bot||winner||drawn)return;const bot=players.find(p=>p.bot);if(!bot)return;appendLog(`${active.name} resigned. ${bot.name} wins the 1v1 PVBot match.`);finish(bot);showDuelNotice("accepted",`${active.name} resigned — ${bot.name} wins.`);};
   const advanceBotTurn=(localPlayers, botName, summary="All useful actions completed; passing the turn automatically.",localBoardOverride=board,localBankOverride=bank,localDeckOverride=deck)=>{
     if(!localPlayers?.length)return;
@@ -2963,7 +3000,13 @@ function App(){
         if(failedActions>=10){appendLog(`${p.name} exhausted invalid-action retries after replanning; preserving the best completed line.`);finalizeBotTurn();return;}
         resetBotPlanningCache();window.setTimeout(iterateBot,0);return;
       }
-      const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineTop3:(best.engineTop3||[]).map(x=>({action:actionLabel(x),score:x.score}))};
+      const engineTop3=(best.engineTop3||[]);
+      const chosenEngine=engineTop3.find(x=>x.action===actionLabel(best));
+      const engineBestScore=Number.isFinite(engineTop3[0]?.score)?Number(engineTop3[0].score):Number(best.score)||0;
+      const engineChosenScore=Number.isFinite(chosenEngine?.score)?Number(chosenEngine.score):engineBestScore;
+      const engineScale=Math.max(20,Math.abs(engineBestScore)+20);
+      const engineLoss=Math.max(0,Math.min(1,(engineBestScore-engineChosenScore)/engineScale));
+      const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineBestScore,engineChosenScore,engineLoss,engineTop3:engineTop3.map(x=>({action:actionLabel(x),score:x.score}))};
       decisionsRef.current=[...decisionsRef.current,botDecision];
       setDecisions(decisionsRef.current);
       if(best.type==="road")botRoadsThisTurn++;
@@ -3085,17 +3128,32 @@ function App(){
 
   const closeOverlay=()=>{cancelActionConfirm();setTab("game");setQuickPanel(null);setDevOpen(false);setTradeOffer(null);setRobberVictim(null);setAnalysisReplay(null);setAnalysisIndex(0);};
   const overlayTitle=tab==="analysis"?"BOARD ANALYSIS":tab==="history"?"MATCH HISTORY":"POST-GAME REVIEW";
-  const analysis_block=tab==="analysis"?<div className="refOverlay"><div className="refOverlayCard refAnalysisOverlay"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">SETTINGS + TELEMETRY</span><h2>SETTINGS</h2><p>Choose the HUD accent theme. Live board-analysis data remains available below.</p></div><div className="refOverlayMetric"><span>DECISION ACCURACY</span><b>{playerAccuracy==null?"—":`${playerAccuracy}%`}</b></div></div><section className="themePickerCard"><div><span className="eyebrow">UI THEME</span><h3>Accent & Glow</h3><p>Changes the neon accents, active tabs and panel borders across the HUD.</p></div><div className="themeSwatches">{Object.keys(UI_THEMES).map(name=><button key={name} className={`themeSwatch ${theme===name?"selected":""}`} style={{"--swatch":UI_THEMES[name].cyan}} onClick={()=>setTheme(name)}><span></span><b>{name}</b></button>)}</div></section><section className="musicSettingsCard"><div><span className="eyebrow">AMBIENT AUDIO</span><h3>Violin background music</h3><p>Looping instrumental ambience for the table. Your choice is saved on this device.</p></div><button className={`musicToggle ${musicEnabled?"on":"off"}`} onClick={()=>setMusicEnabled(v=>!v)}><span>{musicEnabled?"ON":"OFF"}</span><b>{musicEnabled?"♫ PLAYING":"♫ MUTED"}</b></button></section><div className="refAnalysisGrid"><section><h3>Top settlement spots</h3>{boardAnalysis.slice(0,8).map((x,i)=><div className="refRankRow" key={x.v}><span>#{i+1}</span><div><b>Intersection {x.v}</b><small>{x.legal?"Legal placement":"Occupied / blocked"}</small></div><strong>{Number.isFinite(x.score)?x.score.toFixed(1):"—"}</strong></div>)}</section><section><h3>Production & awards</h3><div className="refMetricTiles">{RES.map(r=><div key={r}><span>{ICON[r]}</span><b>{adjacentProduction(geo,board,active)[r].toFixed(1)}</b><small>{LABEL[r]}</small></div>)}</div><div className="refAwardLine"><span>🛣 Longest Road</span><b>{award.roadOwner!=null?players.find(p=>p.id===award.roadOwner)?.name||"Open":"Open"}</b></div><div className="refAwardLine"><span>⚔ Largest Army</span><b>{award.armyOwner!=null?players.find(p=>p.id===award.armyOwner)?.name||"Open":"Open"}</b></div></section></div></div></div>:null;
-    const history_block=tab==="history"?<div className="refOverlay"><div className="refOverlayCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">LOCAL ARCHIVE</span><h2>GAME HISTORY</h2><p>Completed matches are stored locally in this browser. New games also include turn-by-turn engine analysis frames.</p></div><button className="refDangerButton" onClick={clearHistory}>CLEAR HISTORY</button></div>{history.length===0?<div className="refEmpty">No completed matches yet.<button className="refPrimaryButton" onClick={()=>{closeOverlay();startNew()}}>START NEW GAME</button></div>:<div className="refHistoryGrid">{history.slice(0,12).map(g=><article key={g.id} className="refHistoryItem"><div><span>{fmtDate(g.date)}</span><h3>{g.result==="draw"?"DRAW":`${g.winner} won`}</h3></div><b>{g.targetVP} VP</b><small>{g.accuracy==null?"Accuracy unavailable":`${g.accuracy}% decision accuracy`}</small><div className="historyActionRow"><button onClick={()=>{setReviewGame(g);setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);setTurn(g.winnerId||0);setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);setTab("postgame")}}>REVIEW →</button><button className="analyzeHistoryBtn" onClick={()=>openHistoryAnalyze(g)} disabled={!g.result||!g.analysisFrames?.length}>ANALYZE {g.analysisFrames?.length?`(${g.analysisFrames.length} TURNS)`:"(COMPLETE GAMES ONLY)"}</button></div></article>)}</div>}</div></div>:null;
+  const analysis_block=tab==="analysis"?(
+    <div className="refOverlay analysisHubOverlay"><div className="refOverlayCard analysisHubCard"><button className="refClose" onClick={closeOverlay}>×</button>
+      <div className="refOverlayHead analysisHubHeader"><div><span className="eyebrow">CATAN ENGINE · GAME REVIEW</span><h2>ANALYSIS</h2><p>Review completed games using game history, with move classifications and accuracy for every human and bot.</p></div><div className="refOverlayMetric"><span>COMPLETED GAMES</span><b>{history.length}</b></div></div>
+      <div className="analysisHubControls"><div><b>GAME HISTORY ANALYZER</b><span>Result and time played are shown before you open a review.</span></div><button className="refPrimaryButton" onClick={()=>startEngineSetup()}>CUSTOM BOARD BUILDER →</button></div>
+      <div className="analysisHistoryList">{history.length?history.slice(0,30).map(g=>{const moves=analysisMovesFromFrames(g.analysisFrames||[]);const botMoves=moves.filter(m=>m.isBot);const botAccuracy=botMoves.length?Math.round(botMoves.reduce((s,m)=>s+(ANALYSIS_ACCURACY_WEIGHT[m.classification?.key]??50),0)/botMoves.length):null;return <article className="analysisHistoryCard" key={g.id}><div className="analysisHistoryMain"><div><span>{fmtDate(g.date)}</span><h3>{g.result==="draw"?"DRAW":(g.winner||"GAME COMPLETE")}</h3><p>{g.gameMode==="1v1"?"1v1 · 15 VP":"4 PLAYER · 10 VP"} · {(g.players||[]).map(p=>p.name).join(" · ")}</p></div><div className="analysisHistoryResult"><b>{g.result==="draw"?"DRAW":(g.winner||"WINNER")}</b><small>{g.targetVP} VP target</small></div></div><div className="analysisHistoryStats"><div><span>RESULT</span><b>{g.result==="draw"?"DRAW":(g.winner||"—")}</b></div><div><span>TIME PLAYED</span><b>{fmtDuration(g.durationSeconds)}</b></div><div><span>GAME ACCURACY</span><b>{g.accuracy==null?"—":g.accuracy+"%"}</b></div><div><span>MOVES</span><b>{moves.length}</b></div><div><span>BOTS</span><b>{botAccuracy==null?"—":botAccuracy+"%"}</b></div></div><div className="analysisHistoryActions"><button className="openHistory" onClick={()=>openHistoryAnalyze(g)} disabled={!g.result||!g.analysisFrames?.length}>ANALYZE GAME →</button><button className="refGhostButton" onClick={()=>{setReviewGame(g);setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);setTurn(g.winnerId||0);setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);setTab("postgame")}}>VIEW RESULT</button></div></article>}) : <div className="refEmpty"><h3>No completed games yet</h3><p>Finish a game to populate the Catan Engine review archive.</p><button className="refPrimaryButton" onClick={()=>{closeOverlay();startNew()}}>START NEW GAME</button></div>}</div>
+      <div className="analysisHubFooter"><div><b>Custom analysis</b><span>Choose 1v1 or 4-player, set the board and game state, then run the engine.</span></div><button className="refGhostButton" onClick={()=>startEngineSetup()}>OPEN ANALYSIS LAB →</button></div>
+    </div></div>
+  ):null;
+  const history_block=tab==="history"?<div className="refOverlay"><div className="refOverlayCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">LOCAL ARCHIVE</span><h2>GAME HISTORY</h2><p>Completed matches are stored locally in this browser. New games also include turn-by-turn engine analysis frames.</p></div><button className="refDangerButton" onClick={clearHistory}>CLEAR HISTORY</button></div>{history.length===0?<div className="refEmpty">No completed matches yet.<button className="refPrimaryButton" onClick={()=>{closeOverlay();startNew()}}>START NEW GAME</button></div>:<div className="refHistoryGrid">{history.slice(0,12).map(g=><article key={g.id} className="refHistoryItem"><div><span>{fmtDate(g.date)}</span><h3>{g.result==="draw"?"DRAW":`${g.winner} won`}</h3></div><b>{g.targetVP} VP</b><small>{fmtDuration(g.durationSeconds)} · {g.accuracy==null?"Accuracy unavailable":`${g.accuracy}% decision accuracy`}</small><div className="historyActionRow"><button onClick={()=>{setReviewGame(g);setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);setTurn(g.winnerId||0);setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);setTab("postgame")}}>REVIEW →</button><button className="analyzeHistoryBtn" onClick={()=>openHistoryAnalyze(g)} disabled={!g.result||!g.analysisFrames?.length}>ANALYZE {g.analysisFrames?.length?`(${g.analysisFrames.length} TURNS)`:"(COMPLETE GAMES ONLY)"}</button></div></article>)}</div>}</div></div>:null;
   const replayFrames=analysisReplay?.analysisFrames||[];
-  const replayFrame=replayFrames[Math.min(analysisIndex,Math.max(0,replayFrames.length-1))];
-  const replayHumanFrames=replayFrames.filter(f=>!f.isBot);
-  const replayBotFrames=replayFrames.filter(f=>f.isBot);
-  const replayBreakdown=ANALYSIS_CLASSIFICATIONS.map(c=>({ ...c,count:replayFrames.filter(f=>f.classification?.key===c.key).length }));
-  const replayHumanAccuracy=analysisAccuracy(replayHumanFrames);
-  const replayBotAccuracy=analysisAccuracy(replayBotFrames);
-  const replayOverallAccuracy=analysisAccuracy(replayFrames);
-  const history_analyze_block=tab==="historyAnalyze"&&analysisReplay?.result&&analysisReplay?.analysisFrames?.length?<div className="refOverlay historyAnalyzeOverlay"><div className="refOverlayCard refHistoryAnalyzeCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">TURN-BY-TURN REPLAY</span><h2>GAME ANALYZER</h2><p>Completed game review only. Step through every human and bot turn and classify each one from the engine's position change. Use <b>[</b> or <b>/</b> to step backward, <b>\</b> or <b>]</b> to step forward, or the arrow keys.</p></div><div className="refOverlayMetric"><span>TURN</span><b>{replayFrame?`${replayFrame.turn} / ${replayFrames.length}`:"—"}</b></div></div>{!replayFrame?<div className="refEmpty"><h3>No turn-by-turn analyzer data</h3><p>This older match was saved before replay frames were stored. Play a new match to use the analyzer.</p></div>:<><div className="analysisReplaySummary"><div><span>ANALYSIS SUMMARY</span><b>{replayFrames.length} analyzed turns</b><small>Human {replayHumanAccuracy==null?"—":`${replayHumanAccuracy}%`} · Bot {replayBotAccuracy==null?"—":`${replayBotAccuracy}%`} · Overall {replayOverallAccuracy==null?"—":`${replayOverallAccuracy}%`}</small></div>{replayBreakdown.map(c=><div className={`analysisSummaryChip class-${c.key}`} key={c.key}><span>{c.icon}</span><b>{c.count}</b><small>{c.label}</small></div>)}</div><div className="analysisReplayToolbar"><button className="refGhostButton" onClick={()=>setAnalysisIndex(i=>Math.max(0,i-1))} disabled={analysisIndex<=0}>← PREVIOUS TURN</button><span>Turn {replayFrame.turn} · {replayFrame.isBot?"🤖 BOT":"👤 HUMAN"} · {replayFrame.playerName}{replayFrame.classification?` · ${replayFrame.classification.label}`:""}</span><button className="refGhostButton" onClick={()=>setAnalysisIndex(i=>Math.min(replayFrames.length-1,i+1))} disabled={analysisIndex>=replayFrames.length-1}>NEXT TURN →</button></div><div className="analysisReplayGrid"><section className="analysisReplayBoard"><Board geo={geo} board={replayFrame.after.board} players={replayFrame.after.players} ports={replayFrame.after.ports} selectedV={null} selectedE={null} analysisMode={false}/></section><aside className="analysisReplaySide"><section className="replayMoveCard">{replayFrame.classification?<div className={`classificationBadge classification-${replayFrame.classification.key}`}>{replayFrame.classification.icon} {replayFrame.classification.label}</div>:null}<h3>{replayFrame.action}</h3><p>{replayFrame.summary||"Turn completed."}</p>{replayFrame.classification&&<div className="probDelta"><span>Win probability change</span><b>{replayFrame.delta>=0?"+":""}{(replayFrame.delta*100).toFixed(1)} pts</b></div>}</section><section className="replayOddsCard"><div className="refPanelTitle">POSITION ODDS AFTER TURN</div>{replayFrame.afterOdds.map(o=><div className="engineOddsRow" key={o.id}><span>{o.name}</span><b>{(o.prob*100).toFixed(1)}%</b></div>)}</section><section className="replayMoveList"><div className="refPanelTitle">ACTIONS THIS TURN</div>{replayFrame.decisions?.length?replayFrame.decisions.map((d,i)=><div className="replayActionLine" key={i}><span>{d.match?"✓":"•"}</span><div><b>{d.action}</b><small>{replayFrame.isBot?"Engine line: ":"Engine recommendation: "}{d.recommended}</small></div></div>):<div className="engineEmpty">No directly recorded action on this turn; the engine still classifies the completed position change.</div>}</section></aside></div></>}</div></div>:null;
+  const replayMoves=analysisMovesFromFrames(replayFrames);
+  const replayMove=replayMoves[Math.min(analysisIndex,Math.max(0,replayMoves.length-1))];
+  const replayHumanMoves=replayMoves.filter(f=>!f.isBot);
+  const replayBotMoves=replayMoves.filter(f=>f.isBot);
+  const replayBreakdown=ANALYSIS_CLASSIFICATIONS.map(c=>({key:c.key,icon:c.icon,label:c.label,count:replayMoves.filter(f=>f.classification?.key===c.key).length}));
+  const replayHumanAccuracy=analysisAccuracy(replayHumanMoves);
+  const replayBotAccuracy=analysisAccuracy(replayBotMoves);
+  const replayOverallAccuracy=analysisAccuracy(replayMoves);
+  const history_analyze_block=tab==="historyAnalyze"&&analysisReplay?.result&&replayMoves.length?(
+    <div className="refOverlay historyAnalyzeOverlay"><div className="refOverlayCard refHistoryAnalyzeCard"><button className="refClose" onClick={closeOverlay}>×</button>
+      <div className="refOverlayHead"><div><span className="eyebrow">CATAN ENGINE · MOVE REVIEW</span><h2>GAME ANALYZER</h2><p>{analysisReplay.result==="draw"?"DRAW":(analysisReplay.winner||"GAME COMPLETE")} · {fmtDate(analysisReplay.date)} · {fmtDuration(analysisReplay.durationSeconds)} · {analysisReplay.gameMode==="1v1"?"1v1":"4 PLAYER"}</p></div><div className="refOverlayMetric"><span>MOVE</span><b>{analysisIndex+1} / {replayMoves.length}</b></div></div>
+      <div className="analysisReplaySummary"><div><span>GAME ACCURACY</span><b>{replayOverallAccuracy==null?"—":replayOverallAccuracy+"%"}</b><small>Human {replayHumanAccuracy==null?"—":replayHumanAccuracy+"%"} · Bots {replayBotAccuracy==null?"—":replayBotAccuracy+"%"}</small></div>{replayBreakdown.map(c=><div className={"analysisSummaryChip class-"+c.key} key={c.key}><span>{c.icon}</span><b>{c.count}</b><small>{c.label}</small></div>)}</div>
+      <div className="analysisReplayToolbar"><button className="refGhostButton" onClick={()=>setAnalysisIndex(i=>Math.max(0,i-1))} disabled={analysisIndex<=0}>← PREVIOUS MOVE</button><span>Turn {replayMove?.turn||"—"} · {replayMove?.isBot?"BOT":"HUMAN"} · {replayMove?.playerName||"—"} · {replayMove?.classification?.label||"—"}</span><button className="refGhostButton" onClick={()=>setAnalysisIndex(i=>Math.min(replayMoves.length-1,i+1))} disabled={analysisIndex>=replayMoves.length-1}>NEXT MOVE →</button></div>
+      {replayMove&&<div className="analysisReplayGrid"><section className="analysisReplayBoard"><Board geo={geo} board={replayMove.after?.board||analysisReplay.board} players={replayMove.after?.players||analysisReplay.players} ports={replayMove.after?.ports||analysisReplay.ports||[]} selectedV={null} selectedE={null} analysisMode={false}/></section><aside className="analysisReplaySide"><section className="replayMoveCard"><div className={"classificationBadge classification-"+(replayMove.classification?.key||"good")}>{replayMove.classification?.icon||"🟢"} {replayMove.classification?.label||"GOOD"}</div><h3>{replayMove.action||"Move"}</h3><p>{replayMove.recommended?("Engine line: "+replayMove.recommended):"Recorded move from the completed match."}</p>{replayMove.engineLoss!=null&&<div className="probDelta"><span>ENGINE LOSS</span><b>{(replayMove.engineLoss*100).toFixed(1)}%</b></div>}</section><section className="replayOddsCard"><div className="refPanelTitle">POSITION ODDS AFTER MOVE</div>{(replayMove.afterOdds||[]).map(o=><div className="engineOddsRow" key={o.id}><span>{o.name}</span><b>{(o.prob*100).toFixed(1)}%</b></div>)}</section><section className="replayMoveList"><div className="refPanelTitle">MOVE DETAILS</div><div className="replayActionLine"><span>•</span><div><b>{replayMove.isBot?"BOT MOVE":"HUMAN MOVE"}</b><small>{replayMove.match?"Matched the engine line.":"Different from the engine top line; classified from engine loss."}</small></div></div></section></aside></div>}
+    </div></div>
+  ):null;
   const post_block=tab==="postgame"?<div className="refOverlay"><div className="refOverlayCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">MATCH REPORT</span><h2>{reviewGame?.result==="draw"?"DRAW":reviewWinner?.name||winner?.name||"MATCH REVIEW"}</h2><p>{reviewGame?`Frozen snapshot from ${fmtDate(reviewGame.date)}.` : "Current match summary."}</p></div><div className="refOverlayMetric"><span>{reviewGame?.result==="draw"?"RESULT":"FINAL SCORE"}</span><b>{reviewGame?.result==="draw"?"DRAW":`${reviewWinner?.vp??"—"} VP`}</b></div></div><div className="matchOutcomeNotice">{reviewGame?.result==="draw"?(reviewGame?.drawMessage||"Draw offer accepted — the match ended in a draw."):reviewGame?.result==="resign"?(reviewGame?.drawMessage||"Match ended by resignation."):""}</div><div className="refPostGrid">{(reviewPlayers||[]).map(p=><div key={p.id} className="refPostPlayer"><div><b>{p.name}</b><span>{p.bot?"AI":"YOU"}</span></div><strong>{p.vp} VP</strong><small>Settlements {p.settlements?.length||0} · Cities {p.cities?.length||0} · Roads {p.roads?.length||0}</small></div>)}</div><section className="refFullLogCard"><div className="refPanelTitle">COMPLETE TURN LOG <span>{(reviewGame?.logs||log).length} ENTRIES</span></div><div className="refFullLogList">{(reviewGame?.logs||log).map((x,i)=><div key={x.id||i}><b>T{x.turn}</b><p>{x.text}</p></div>)}</div></section><button className="refPrimaryButton" onClick={()=>{closeOverlay();setReviewGame(null)}}>BACK TO BOARD</button></div></div>:null;
   const devRoadDock=devChoice?.card==="Road Building"?<div className="refRoadChoiceDock"><b>ROAD BUILDING</b><span>Click up to 2 legal roads. Each selected road builds immediately.</span><strong>{devChoice.roads.length}/2</strong><div className="refRoadChoiceButtons"><button disabled={!devChoice.roads.length} onClick={()=>applyDevChoice("Road Building",[],devChoice.roads,devChoice)}>DONE</button><button onClick={()=>{if(devChoice.roads.length===0)setDevChoice(null)}}>CANCEL</button></div></div>:null;
   const actionConfirmBubble=(key)=>["draw","resign"].includes(key)&&actionConfirm?.visible&&actionConfirm.key===key?<div className="refActionConfirmBubble"><span>{actionConfirm.label}</span><div><button className="confirm" onClick={executeConfirmedAction}>CONFIRM</button><button className="cancel" onClick={cancelActionConfirm}>CANCEL</button></div></div>:null;

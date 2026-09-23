@@ -252,6 +252,11 @@ export function acceptFeedbackLesson(text,{state,playerId,review,source="user-fe
   return{accepted:true,store:trained,lesson};
 }
 
+export function verifyLearnedCandidate(state,playerId,action,options={}){
+  const benchmark=benchmarkCandidateAgainstBest(state,{...(action||{}),playerId},{...options,minImprovement:options.minImprovement??.01});
+  return benchmark;
+}
+
 export function predictLearnedAdvantage(state,playerId,action,store=defaultLearningStore()){
   const features=learningFeatures(state,playerId,action);
   const weights=store?.model?.weights||[];

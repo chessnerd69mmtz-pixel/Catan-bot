@@ -2963,12 +2963,6 @@ function App(){
         if(failedActions>=10){appendLog(`${p.name} exhausted invalid-action retries after replanning; preserving the best completed line.`);finalizeBotTurn();return;}
         resetBotPlanningCache();window.setTimeout(iterateBot,0);return;
       }
-      const engineTop3=(best.engineTop3||[]);
-      const chosenEngine=engineTop3.find(x=>x.action===actionLabel(best));
-      const engineBestScore=Number.isFinite(engineTop3[0]?.score)?Number(engineTop3[0].score):Number(best.score)||0;
-      const engineChosenScore=Number.isFinite(chosenEngine?.score)?Number(chosenEngine.score):engineBestScore;
-      const engineScale=Math.max(20,Math.abs(engineBestScore)+20);
-      const engineLoss=Math.max(0,Math.min(1,(engineBestScore-engineChosenScore)/engineScale));
       const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineTop3:(best.engineTop3||[]).map(x=>({action:actionLabel(x),score:x.score}))};
       decisionsRef.current=[...decisionsRef.current,botDecision];
       setDecisions(decisionsRef.current);

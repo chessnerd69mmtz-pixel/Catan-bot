@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {evaluateState,classifyMove,computePlayerAnalysis,WEIGHTS,MOVE_LABELS} from "../src/analysis-engine.mjs";
+import {evaluateState,classifyMove,computePlayerAnalysis,applyAnalysisMove,WEIGHTS,MOVE_LABELS} from "../src/analysis-engine.mjs";
 
 const geo={
   vertices:Array.from({length:6},(_,i)=>({x:i,y:i})),
@@ -34,6 +34,18 @@ const evals=[
   {moveId:"3",playerId:0,equityLossPct:10,label:"mistake"},
   {moveId:"4",playerId:1,equityLossPct:20,label:"blunder"}
 ];
+
+const openingState={
+  ...base,
+  players: [
+    {...base.players[0],settlements:[],cities:[],roads:[]},
+    {...base.players[1],settlements:[3],cities:[],roads:[2]}
+  ]
+};
+const counterfactual=applyAnalysisMove(openingState,{type:"settlement",spot:0,playerId:0},geo);
+assert(counterfactual&&counterfactual.players[0].settlements.includes(0),"Opening settlement counterfactual should be applicable");
+assert(counterfactual.players[0].vp===4,"Counterfactual settlement should add one VP");
+
 const a=computePlayerAnalysis(0,evals);
 const b=computePlayerAnalysis(1,evals);
 assert(a.accuracy>=0&&a.accuracy<=100,"accuracy must be bounded");

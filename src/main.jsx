@@ -2067,10 +2067,11 @@ function App(){
       return next;
     });
   };
-  const persistLocalSnapshot=(status="in_progress",extra={})=>{
+  const persistLocalSnapshot=(status="in_progress",extra={},overrides={})=>{
     const id=currentGameIdRef.current||String(Date.now());
     currentGameIdRef.current=id;
-    const snapshot={gameId:id,id,status,mode:isPVBot?"1v1":analysisSandbox?"sandbox":"4player",gameMode:isPVBot?"1v1":analysisSandbox?"sandbox":"4-player",startedAt:gameStarted,endedAt:status==="complete"?Date.now():null,durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),players:clone(players),board:clone(board),ports:clone(ports),targetVP,winnerId:winner?.id??null,finalScores:Object.fromEntries((players||[]).map(p=>[String(p.id),p.vp||0])),decisions:clone(decisionsRef.current),analysisFrames:clone(analysisFramesRef.current),logs:clone(logRef.current),boardSetup:{tiles:clone(board||[]),ports:clone(ports||[]),customBuilt:!!analysisSandbox},updatedAt:Date.now(),...extra};
+    const snapPlayers=overrides.players||players,snapBoard=overrides.board||board,snapPorts=overrides.ports||ports,snapBank=overrides.bank||bank,snapDeck=overrides.deck||deck,snapAwards=overrides.heldAwards||heldAwards;
+    const snapshot={gameId:id,id,status,mode:isPVBot?"1v1":analysisSandbox?"sandbox":"4player",gameMode:isPVBot?"1v1":analysisSandbox?"sandbox":"4-player",startedAt:gameStarted,endedAt:status==="complete"?Date.now():null,durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),players:clone(snapPlayers),board:clone(snapBoard),ports:clone(snapPorts),bank:clone(snapBank),deckCount:Array.isArray(snapDeck)?snapDeck.length:0,heldAwards:clone(snapAwards),targetVP,winnerId:winner?.id??null,finalScores:Object.fromEntries((snapPlayers||[]).map(p=>[String(p.id),p.vp||0])),decisions:clone(decisionsRef.current),analysisFrames:clone(analysisFramesRef.current),logs:clone(logRef.current),boardSetup:{tiles:clone(snapBoard||[]),ports:clone(snapPorts||[]),customBuilt:!!analysisSandbox},updatedAt:Date.now(),...extra};
     pendingLiveGameRef.current=snapshot;saveLocalGame(snapshot);return snapshot;
   };
   const syncFinalGame=async(snapshot,analysis=null)=>{
@@ -2316,7 +2317,7 @@ function App(){
     const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta:swing,swing,engineLoss,classification,formula:{weights:ANALYSIS_WEIGHT_CONFIG,before:formulaBefore,after:formulaAfter,equityLoss:Math.max(0,(formulaBefore[pending.playerId]||0)-(formulaAfter[pending.playerId]||0))},beforeOdds:ps.map(p=>({id:p.id,name:p.name,prob:formulaBefore[p.id]||0})),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:afterState,decisions:clone(classifiedDecisions),moves:clone(classifiedDecisions),summary};
     analysisFramesRef.current=[...analysisFramesRef.current,frame];
     analysisTurnRef.current=null;
-    persistLocalSnapshot("in_progress");
+        persistLocalSnapshot("in_progress",{}, {players:ps,board:bd,ports:pr,bank:bk,deck:dk,heldAwards:ha});
   };
 
   const startEngineSetup=()=>{

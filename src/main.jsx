@@ -2196,7 +2196,7 @@ function App(){
   };
   const removeEnginePiece=(kind,id)=>{setEnginePlayers(ps=>ps.map(p=>p.id===engineActive?{...p,[kind]:p[kind].filter(x=>x!==id)}:p));setEngineSelectedPiece(null);};
   const runEngineAnalysis=()=>setEngineAnalysis(true);
-  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers(enginePlayerCount));setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(enginePlayerCount===2?15:10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
+  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers());setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
 
   const startGame=()=>{
     if(musicEnabled&&!musicCleanupRef.current){try{musicCleanupRef.current=createViolinLoop();}catch{}}

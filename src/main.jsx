@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
-import { analyzeGameRecord, computePlayerAnalysis, ENGINE_VERSION, LABEL_META } from "./analysis-engine.mjs";
+import { analyzeGameRecord, computePlayerAnalysis, evaluateState, ENGINE_VERSION, LABEL_META } from "./analysis-engine.mjs";
 import { loadLocalGames, saveLocalGame, getCachedAnalysis, saveAnalysisCache, supabaseConfigured, getAuthSession, fetchCloudGames, mergeGameRecords, syncCompletedGame, flushSyncQueue, signInWithEmail, signUpWithEmail, signOut } from "./game-persistence.mjs";
 
 const RES=["wood","brick","sheep","wheat","ore"];
@@ -1081,7 +1081,7 @@ function analysisRoleStats(frames,players){
 }function analysisResultToFrames(game,analysis){
   const groups=new Map();
   for(const e of analysis?.moveEvaluations||[]){
-    const key=String(e.turn??0);let frame=groups.get(key);if(!frame){frame={turn:Number(e.turn||0),playerId:e.playerId,playerName:e.playerName,isBot:!!game?.players?.find(p=>p.id===e.playerId)?.bot,action:e.action||"Move",delta:(e.winProbAfterActual||0)-(e.winProbBefore||0),engineLoss:(e.equityLossPct||0)/100,beforeOdds:[],afterOdds:[],decisions:[]};groups.set(key,frame);}frame.decisions.push({...e,action:e.action,playerId:e.playerId,playerName:e.playerName,bot:!!frame.isBot,isBot:!!frame.isBot,classification:LABEL_META[e.label]||e.classification,engineLoss:(e.equityLossPct||0)/100,recommended:e.bestAlternative?.type||"Best alternative",match:e.bestAlternative?JSON.stringify(e.payload)===JSON.stringify(e.bestAlternative):false,before:e.stateBefore,after:e.stateAfter,beforeOdds:Object.entries(e.stateBefore?.players||{}).map(([id])=>({id,prob:e.winProbBefore||0})),afterOdds:Object.entries(e.stateAfter?.players||{}).map(([id])=>({id,prob:e.winProbAfterActual||0}))});frame.classification=LABEL_META[e.label]||e.classification||frame.classification;}
+    const key=String(e.turn??0);const beforeOdds=e.stateBefore?evaluateState({...e.stateBefore,geo}):{};const afterOdds=e.stateAfter?evaluateState({...e.stateAfter,geo}):{};let frame=groups.get(key);if(!frame){frame={turn:Number(e.turn||0),playerId:e.playerId,playerName:e.playerName,isBot:!!game?.players?.find(p=>p.id===e.playerId)?.bot,action:e.action||"Move",delta:(e.winProbAfterActual||0)-(e.winProbBefore||0),swing:(e.winProbAfterActual||0)-(e.winProbBefore||0),engineLoss:(e.equityLossPct||0)/100,beforeOdds:Object.entries(beforeOdds).map(([id,prob])=>({id:Number.isFinite(Number(id))?Number(id):id,name:(e.stateBefore?.players||[]).find(p=>String(p.id)===String(id))?.name||String(id),prob})),afterOdds:Object.entries(afterOdds).map(([id,prob])=>({id:Number.isFinite(Number(id))?Number(id):id,name:(e.stateAfter?.players||[]).find(p=>String(p.id)===String(id))?.name||String(id),prob})),before:e.stateBefore,after:e.stateAfter,decisions:[]};groups.set(key,frame);}frame.decisions.push({...e,action:e.action,playerId:e.playerId,playerName:e.playerName,bot:!!frame.isBot,isBot:!!frame.isBot,classification:LABEL_META[e.label]||e.classification,engineLoss:(e.equityLossPct||0)/100,recommended:e.bestAlternative?.type||"Best alternative",match:e.bestAlternative?JSON.stringify(e.payload)===JSON.stringify(e.bestAlternative):false,before:e.stateBefore,after:e.stateAfter});frame.classification=LABEL_META[e.label]||e.classification||frame.classification;}
   return [...groups.values()].sort((a,b)=>a.turn-b.turn);
 }
 

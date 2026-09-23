@@ -1078,7 +1078,13 @@ function analysisRoleStats(frames,players){
   const out={overall:analysisAccuracy(frames),players:{}};
   for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(moves,p.id),turns:moves.filter(f=>f.playerId===p.id).length};
   return out;
+}function analysisResultToFrames(game,analysis){
+  const groups=new Map();
+  for(const e of analysis?.moveEvaluations||[]){
+    const key=String(e.turn??0);let frame=groups.get(key);if(!frame){frame={turn:Number(e.turn||0),playerId:e.playerId,playerName:e.playerName,isBot:!!game?.players?.find(p=>p.id===e.playerId)?.bot,action:e.action||"Move",delta:(e.winProbAfterActual||0)-(e.winProbBefore||0),engineLoss:(e.equityLossPct||0)/100,beforeOdds:[],afterOdds:[],decisions:[]};groups.set(key,frame);}frame.decisions.push({...e,action:e.action,playerId:e.playerId,playerName:e.playerName,bot:!!frame.isBot,classification:LABEL_META[e.label]||e.classification,engineLoss:(e.equityLossPct||0)/100,recommended:e.bestAlternative?.type||"Best alternative"});frame.classification=LABEL_META[e.label]||e.classification||frame.classification;}
+  return [...groups.values()].sort((a,b)=>a.turn-b.turn);
 }
+
 function themeVars(name){
   const t=UI_THEMES[name]||UI_THEMES.Cyan;
   return {

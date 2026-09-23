@@ -2584,9 +2584,26 @@ function App(){
   const autoBotSetup=()=>{
     if(screen!=="setupBoard"||!currentSetupPlayer?.bot)return;const p=currentSetupPlayer,firstRound=p.settlements.length===0;
     const difficulty=botDifficultyProfile(p.diff);
+    let learnedOpening=null;
+    try{
+      const learningStore=loadLearningStore();
+      const state={players,board,geo,ports,bank,deckCount:deck?.length||0,targetVP,heldAwards};
+      const openingActions=geo.vertices.map((_,spot)=>spot).filter(spot=>legalSettlement(spot,players,geo)).map(spot=>({type:"settlement",spot,playerId:p.id}));
+      const learned=chooseLearnedCandidate(state,p.id,openingActions,learningStore);
+      if(learned?.action){
+        const verification=verifyLearnedCandidate(state,p.id,learned.action,{samples:48,horizon:6,seed:20260923+p.id*97+setupRound});
+        if(verification?.accepted){
+          learnedOpening={action:learned.action,verification};
+        }
+      }
+    }catch{}
     const pair=firstRound?bestOpeningPair(p,players,board,geo,ports,bank,targetVP,Math.round(1100*difficulty.openingBudgetMultiplier)):bestOpeningCompanion(p.settlements[0],p,players,board,geo,ports,bank,targetVP,Math.round(700*difficulty.openingBudgetMultiplier));
     if(firstRound&&pair)setPvOpeningPlan(pair);
     const target=pair?.second!=null&&p.settlements.length===1?pair.second:pair?.first;let v=target;
+    if(learnedOpening?.action?.spot!=null){
+      v=learnedOpening.action.spot;
+      appendLog(`🧠 ${p.name} used a verified learned opening settlement after the feedback model cleared the statistical improvement gate.`);
+    }
     if(v==null){const cache=makeScoreCache(players,board,geo,ports,bank,targetVP);const candidates=geo.vertices.map((_,i)=>({i,s:openingPlacementScore(i,p,players,board,geo,ports,bank,targetVP,cache)})).filter(x=>Number.isFinite(x.s)).sort((a,b)=>b.s-a.s);v=candidates[0]?.i;}if(v==null)return;
     const placedVirtual={...p,settlements:[...(p.settlements||[]),v]},placedPlayers=players.map(x=>x.id===p.id?placedVirtual:x);
     const futureCandidates=geo.vertices.map((_,i)=>i).filter(x=>legalSettlement(x,placedPlayers,geo)).map(x=>({v:x,s:openingPlacementScore(x,placedVirtual,placedPlayers,board,geo,ports,bank,targetVP)})).sort((a,b)=>b.s-a.s).slice(0,12);

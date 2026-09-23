@@ -1940,7 +1940,8 @@ function gameInvariantReport(players,board,bank,deck,geo){
   return {ok:errors.length===0,errors};
 }
 function App(){
-  const geo=useMemo(makeGeometry,[]);\n  analysisGeometryFallback=geo;
+  const geo=useMemo(makeGeometry,[]);
+  analysisGeometryFallback=geo;
   const [screen,setScreen]=useState("home");
   const [integrityErrors,setIntegrityErrors]=useState([]);
   const integrityStampRef=useRef("");

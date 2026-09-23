@@ -3851,3 +3851,17 @@ button,select,input{font-family:inherit}
   .analysisReplayShell{padding:9px!important}.analysisReplaySummary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.analysisReplaySummary>div:first-child{grid-column:1/-1}
   .analysisReplayToolbar{grid-template-columns:1fr 1fr!important}.replayActionButtons{grid-template-columns:1fr}.replayChangedGrid{grid-template-columns:repeat(2,1fr)}.analysisCriticalGrid{grid-template-columns:1fr}.analysisPlayerRow{grid-template-columns:1fr 1fr 1fr}.analysisPlayerRow em{grid-column:1/-1}.analysisGameStoryCard{align-items:flex-start;flex-direction:column}.analysisRatingLegend{justify-content:flex-start}
 }
+
+/* ===== SAFE BOT LEARNING / FEEDBACK LAB ===== */
+.replayLearningCard{padding:10px!important;border:1px solid rgba(183,255,0,.16)!important;border-radius:12px!important;background:linear-gradient(145deg,rgba(23,45,18,.25),rgba(5,14,22,.8))!important}
+.replayLearningIntro{margin:5px 0 8px;color:#90a9a0;font-size:8px;line-height:1.5}
+.replayLearningInput{width:100%;min-height:76px;resize:vertical;padding:8px 9px;border:1px solid rgba(183,255,0,.17);border-radius:8px;background:rgba(0,0,0,.2);color:#effff2;font:inherit;font-size:8px;line-height:1.45;outline:none;box-sizing:border-box}
+.replayLearningInput:focus{border-color:rgba(183,255,0,.55);box-shadow:0 0 15px rgba(183,255,0,.06)}
+.replayLearningActions{display:grid;grid-template-columns:1.35fr 1fr;gap:6px;margin-top:7px}
+.replayLearningActions button{min-height:31px!important;font-size:6.5px!important}
+.replayLearningResult{display:grid;gap:3px;margin-top:8px;padding:8px;border-radius:8px;font-size:7px;line-height:1.45}
+.replayLearningResult.accepted{border:1px solid rgba(82,255,146,.3);background:rgba(82,255,146,.06);color:#caffdc}
+.replayLearningResult.rejected{border:1px solid rgba(255,108,119,.24);background:rgba(255,108,119,.055);color:#ffd2d8}
+.replayLearningResult b{font-size:7px;letter-spacing:.08em}.replayLearningResult span{color:#a9bcc2}.replayLearningResult small{color:#7e949f;line-height:1.4}
+.replayLearningStats{display:flex;justify-content:space-between;gap:7px;margin-top:7px;color:#6f8791;font-size:6px}.replayLearningStats b{color:#c9ff75;font-size:7px}
+@media(max-width:760px){.replayLearningActions{grid-template-columns:1fr}}

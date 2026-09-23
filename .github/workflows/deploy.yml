@@ -1,4 +1,4 @@
-name: Verify and publish MONOPOLY
+name: Verify and publish Catan Bot
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: monopoly-build
+  group: catan-bot-build
   cancel-in-progress: true
 
 jobs:
@@ -46,7 +46,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monopoly-dist-${{ github.sha }}
+          name: catan-bot-dist-${{ github.sha }}
           path: dist
           if-no-files-found: error
 

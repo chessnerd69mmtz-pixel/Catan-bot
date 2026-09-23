@@ -1,4 +1,4 @@
-# MONOPOLY
+# Catan Bot
 
 A local browser Catan-style strategy board game with 1v1 PVBot and 4-player bot gameplay.
 
@@ -32,3 +32,10 @@ If GitHub Pages is configured to serve `gh-pages` from the repository root, the 
 `https://chessnerd69mmtz-pixel.github.io/Catan-bot/`
 
 Developed by Aryan Mohammed.
+
+## Robber and trading updates
+
+- Robber theft is resolved against the player occupying the destination hex, never the player moving the robber.
+- Robber theft uses one random physical resource card from the selected adjacent victim.
+- Player trading uses a Colonist-style three-section give/exchange/receive flow with bank/player tabs.
+- Bots can proactively offer trades to human players when the offer advances an immediate strategic objective while giving away surplus resources.

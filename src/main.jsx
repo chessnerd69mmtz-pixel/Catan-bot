@@ -1044,14 +1044,14 @@ function analysisBlockingValue(p,players,board,geo){let v=0;for(const o of playe
 function analysisVulnerabilityPenalty(p){const n=total(p?.hand||empty());return n>7?.5*n*.5:0;}
 function evaluateCatanState(state,weights=ANALYSIS_WEIGHT_CONFIG){const ps=state?.players||[],board=state?.board||[],geo=state?.geo||analysisGeometryFallback,ports=state?.ports||[];const raw={};for(const p of ps)raw[p.id]=weights.w1*(p.vp||0)+weights.w2*analysisProductionScore(p,board,geo)+weights.w3*analysisExpansionPotential(p,board,geo)+weights.w4*analysisArmyProgress(p,ps)+weights.w5*analysisRoadProgress(p,ps,geo)+weights.w6*analysisHandEfficiency(p)+weights.w7*analysisTradeLeverage(p,ports)+weights.w8*analysisBlockingValue(p,ps,board,geo)-weights.w9*analysisVulnerabilityPenalty(p);const vals=Object.values(raw),mx=Math.max(...vals,0),ex=vals.map(v=>Math.exp(v-mx)),den=ex.reduce((a,b)=>a+b,0)||1;return Object.fromEntries(ps.map((p,i)=>[p.id,ex[i]/den]));}
 function analysisMoveIsBuild(action=""){return /settlement|city|road|development/i.test(String(action));}
-function classifyAnalysisMove({loss=0,swing=0,delta=0,action="",gameWinning=false}={}){
-  const normalizedLoss=Math.max(0,Math.min(1,Number(loss)||0));
+function classifyAnalysisMove({loss=0,swing=0,delta=0,action="",gameWinning=false,equityLossPct=null}={}){
+  const lossPct=equityLossPct!=null?Math.max(0,Number(equityLossPct)||0):Math.max(0,Number(loss)||0)*100;
   const s=Number(swing||delta)||0;
-  if(gameWinning&&!analysisMoveIsBuild(action)&&s>=0.22&&normalizedLoss<=0.12)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="brilliant");
-  if(normalizedLoss<=0.015)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="excellent");
-  if(normalizedLoss<=0.05)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="good");
-  if(normalizedLoss<=0.12)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="inaccuracy");
-  if(normalizedLoss<=0.22)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="mistake");
+  if(gameWinning&&!analysisMoveIsBuild(action)&&s>=0.15&&lossPct<0.5)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="brilliant");
+  if(lossPct<0.5)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="excellent");
+  if(lossPct<2.0)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="good");
+  if(lossPct<5.0)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="inaccuracy");
+  if(lossPct<12.0)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="mistake");
   return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="blunder");
 }
 function analysisMoveClassification(decision,frame){
@@ -1071,7 +1071,9 @@ function analysisMovesFromFrames(frames=[]){
 function analysisAccuracy(frames,playerId=null){
   const usable=analysisMovesFromFrames(frames).filter(f=>f?.classification?.key && (playerId==null||f.playerId===playerId));
   if(!usable.length)return null;
-  return Math.round(usable.reduce((sum,f)=>sum+(ANALYSIS_ACCURACY_WEIGHT[f.classification.key]??50),0)/usable.length);
+  const losses=usable.map(f=>f.equityLossPct!=null?Number(f.equityLossPct):Number(f.engineLoss||0)*100);
+  const avg=losses.reduce((a,b)=>a+(Number.isFinite(b)?b:0),0)/Math.max(1,losses.length);
+  return Math.max(0,Math.min(100,Math.round(103.17*Math.exp(-0.044*avg)-3.17)));
 }
 function analysisRoleStats(frames,players){
   const moves=analysisMovesFromFrames(frames);

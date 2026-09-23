@@ -82,3 +82,17 @@ Version 7 adds an AI Lab built on the existing game engine. It deliberately does
 - **Performance profiling:** the AI Lab summarizes completed bot games, win/loss/draw records, decision accuracy and settlement-choice volume without creating a tournament ladder.
 
 The Advanced AI Lab is opened from the in-game navigation under **AI Lab**.
+
+## Safe Bot Self-Learning
+
+Catan Bot includes a persistent, mathematically guarded feedback-learning layer. From the Game Analyzer, a user can describe a concrete alternative such as settlement at 17, road 42, city at 9, buy development, play Knight, or trade wood for wheat.
+
+Feedback is never trusted directly. The learning engine converts the suggestion into a legal candidate move, benchmarks it against the current mathematical best using paired rollout simulations, and requires both:
+- a minimum measured improvement of 1 percentage point of modeled win likelihood, and
+- a positive 95% confidence lower bound for the paired improvement.
+
+Suggestions that are illegal, already equal to the current best, or statistically inconclusive are rejected and never added to bot knowledge.
+
+Accepted feedback becomes a shared persistent training example in localStorage, updates a lightweight contextual linear model, and is available across future games. Before any learned suggestion can influence a bot decision, the bot performs the same fresh mathematical verification against the current engine best. A learned move therefore cannot bypass the mathematical safety gate.
+
+The Analyzer shows the number of verified lessons, model steps, measured gain and confidence bound. Verified learned decisions are also logged during gameplay. Opening-placement suggestions use the same safety gate.

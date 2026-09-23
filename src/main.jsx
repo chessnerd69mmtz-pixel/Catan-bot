@@ -1475,6 +1475,45 @@ function bestRoadBuildingPair(p,players,board,geo,ports,bank,targetVP,deadline=n
   }
   return best;
 }
+function botObjectiveTradeCandidates(p,players,board,geo,ports,bank,targetVP,turnState={}){
+  if(!p?.bot||players.length<3)return [];
+  const plan=turnState.strategicPlan||null;
+  const needProfile=NeedProfile(p,players,board,geo,bank,botModeConfig(players,targetVP)).need;
+  const demand=plan?.missing||{};
+  const wanted=RES.slice().sort((a,b)=>{
+    const da=(demand[b]||0)*3+(needProfile[b]||1);
+    const db=(demand[a]||0)*3+(needProfile[a]||1);
+    return da-db;
+  }).filter(r=>(demand[r]||0)>0 || (needProfile[r]||0)>1.02).slice(0,3);
+  if(!wanted.length)return [];
+  const surplus=RES.slice().sort((a,b)=>{
+    const sa=(p.hand?.[b]||0)-(demand[b]||0)*1.4-(needProfile[b]||1);
+    const sb=(p.hand?.[a]||0)-(demand[a]||0)*1.4-(needProfile[a]||1);
+    return sa-sb;
+  }).filter(r=>(p.hand?.[r]||0)>0);
+  const out=[];
+  for(const partner of players.filter(x=>x.id!==p.id)){
+    for(const get of wanted){
+      for(const give of surplus){
+        if(give===get)continue;
+        for(const giveAmount of [1,2]){
+          if((p.hand?.[give]||0)<giveAmount)continue;
+          const giveBundle=normalizeBundle({[give]:giveAmount});
+          const getBundle=normalizeBundle({[get]:1});
+          const before=strategicPlanDemand(p,plan||{missing:empty(),reserved:empty()});
+          const after=strategicPlanDemand({...p,hand:add(pay(p.hand,giveBundle),getBundle)},plan||{missing:empty(),reserved:empty()});
+          const progress=(before.totalMissing||0)-(after.totalMissing||0);
+          if(progress<=0&&!plan)continue;
+          const objectiveBonus=progress*55+(after.totalMissing===0?90:0);
+          const scarcityBonus=(needProfile[get]||1)*10-(needProfile[give]||1)*giveAmount*2;
+          out.push({type:'playerTrade',partner:partner.id,give,giveAmount,get,getAmount:1,giveBundle,getBundle,objectiveBonus,score:objectiveBonus+scarcityBonus});
+        }
+      }
+    }
+  }
+  return out.sort((a,b)=>b.score-a.score).slice(0,18);
+}
+
 function actionCandidates(p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={}){
   const out=[],plan=turnState.strategicPlan||null;
   if(piecesRemaining(p).settlements>0&&canPay(p.hand,COSTS.settlement))for(let v=0;v<geo.vertices.length;v++)if(legalSettlement(v,players,geo)&&settlementConnected(v,p,geo))out.push({type:'settlement',spot:v});
@@ -1487,20 +1526,17 @@ function actionCandidates(p,players,board,geo,ports,bank,deck,targetVP,heldAward
   for(const give of RES)for(const get of RES){if(give===get)continue;const rate=tradeRate(p,ports,give);if((p.hand[give]||0)>=rate&&(bank[get]||0)>0)out.push({type:'trade',give,get,rate});}
   if(players.length>2){
     const autoplay=!!turnState.botAutoplay;
+    if(p.bot)out.push(...botObjectiveTradeCandidates(p,players,board,geo,ports,bank,targetVP,turnState));
     const partners=players.filter(x=>x.id!==p.id&&(!autoplay||x.bot));
     const wanted=plan?RES.slice().sort((a,b)=>(plan.missing?.[b]||0)-(plan.missing?.[a]||0)).slice(0,3):RES;
     for(const partner of partners){
       for(const get of wanted){
-        for(const ga of [[1,0],[0,1],[1,1],[2,0],[0,2]]){
-          const giveBundle=empty();giveBundle.wood=ga[0];
-          if(ga[1])giveBundle.brick=ga[1];
-          for(const give2 of RES){
-            const base=normalizeBundle(giveBundle);
-            if(base[give2]>=2)continue;
-            base[give2]++;
-            const amount=1;
-            if(bundleTotal(base)>2||bundleTotal(base)<1)continue;
-            if(bundleCanPay(p.hand,base)&&!bundlesShareResource(base,{[get]:amount}))out.push({type:'playerTrade',partner:partner.id,give:getBundlePrimary(base),get,giveAmount:bundleTotal(base),getAmount:amount,giveBundle:base,getBundle:{[get]:amount}});
+        for(const give of RES){
+          if(give===get)continue;
+          for(const amount of [1,2]){
+            if((p.hand[give]||0)<amount)continue;
+            const giveBundle={[give]:amount};
+            if(bundleCanPay(p.hand,giveBundle)&&!bundlesShareResource(giveBundle,{[get]:1}))out.push({type:'playerTrade',partner:partner.id,give,get,giveAmount:amount,getAmount:1,giveBundle:normalizeBundle(giveBundle),getBundle:{[get]:1}});
           }
         }
       }
@@ -3029,7 +3065,7 @@ function App(){
   const rules_overlay=rulesOpen?<div className="refOverlay rulesOverlay"><div className="refOverlayCard rulesCard"><button className="refClose" onClick={()=>setRulesOpen(false)}>×</button><div className="refOverlayHead"><div><span className="eyebrow">QUICK RULEBOOK</span><h2>HOW TO PLAY MONOPOLY</h2><p>Colonist-style interaction model, with Monopoly's existing rules and tools preserved.</p></div><button className="refPrimaryButton" onClick={toggleFullscreen}>⛶ FULLSCREEN</button></div><div className="rulesGrid"><section><h3>TURN FLOW</h3><p>Roll first. A 7 requires discards and robber resolution. Otherwise production is resolved, then you may trade, buy a development card, play one development card, or build directly by clicking a legal board target.</p></section><section><h3>BUILDING</h3><p>Road = 🌲 + 🧱. Settlement = one of each basic resource. City = 2 🌾 + 3 ⛰️. A normal settlement must connect to your road and respect the distance rule.</p></section><section><h3>TRADE</h3><p>Bank is normally 4:1. A 3:1 or resource-specific 2:1 port improves that rate. In 4-player play, player trades exchange resources; 1v1 PVBot disables player trading.</p></section><section><h3>DEVELOPMENT</h3><p>25-card deck. One development card may be played per turn, and a card bought this turn cannot be played this turn. Victory Point cards remain hidden until they can complete the win.</p></section><section><h3>AWARDS</h3><p>Longest Road and Largest Army are worth 2 VP and are retained on a tie; the opponent must strictly exceed the current holder.</p></section><section><h3>1v1 PVBot</h3><p>15 VP, Balanced Dice, Friendly Robber, 9-card safe hand and no player trading. The bot's engine uses current-state analysis plus limited historical memory for robber, Knight, Monopoly and blocking decisions.</p></section><section><h3>KEYBOARD SHORTCUTS</h3><p>R Roll · T Trade · D Buy Dev · P Play Card · E End Turn · C Chat · H Activity · F Fullscreen · ? Rules</p></section><section><h3>ACTION INPUT</h3><p>Roads, settlements, cities, trades, cards and end-turn execute immediately when legal. Only draw offers and resignations use an explicit confirmation step.</p></section></div></div></div>:null;
   const adjustTradeResource=(side,r,delta,max=99)=>setPlayerTrade(t=>({...t,[side]:{...t[side],[r]:clamp((t[side][r]||0)+delta,0,max)}}));
   const modal_body=(quickPanel||devOpen||tradeOffer||discardState||robberVictim||drawOffer||(devChoice&&devChoice.card!=="Road Building"))?<div className="refOverlay quickPanelModal"><div className="refOverlayCard quickPanelCard">{!discardState&&!tradeOffer?.botInitiated&&<button className="refClose" onClick={()=>{setQuickPanel(null);setDevOpen(false);setTradeOffer(null);setRobberVictim(null);cancelActionConfirm()}}>×</button>}<>{quickPanel==="trade"&&<div className="colonistTradeHub">
-  <div className="colonistTradeHeader"><div><span className="eyebrow">TRADE HUB</span><h2>Trade</h2><p>Up/down flow mirrors the Colonist-style trade mapping; rates stay visible on resource cards.</p></div><div className="colonistTradeTabs"><button className={tradeHubTab==="bank"?"active":""} onClick={()=>setTradeHubTab("bank")}>🏦 BANK</button><button className={tradeHubTab==="players"?"active":""} disabled={players.length===2} onClick={()=>setTradeHubTab("players")}>👥 PLAYERS</button></div></div>
+  <div className="colonistTradeHeader"><div><span className="eyebrow">TRADE HUB</span><h2>Trade</h2><p>Choose what you give, choose what you receive, then confirm. Your port rate is shown only on resources you can give.</p></div><div className="colonistTradeTabs"><button className={tradeHubTab==="bank"?"active":""} onClick={()=>setTradeHubTab("bank")}>🏦 BANK TRADE</button><button className={tradeHubTab==="players"?"active":""} disabled={players.length===2} onClick={()=>setTradeHubTab("players")}>👥 PLAYER TRADE</button></div></div>
   {tradeHubTab==="bank"&&<div className="colonistTradeBody">
     <section className="colonistTradeColumn"><div className="colonistTradeColumnTitle"><span>YOU GIVE</span><small>Trade cards from your hand</small></div><div className="colonistResourceGrid">{RES.map(r=>{const count=active?.hand?.[r]||0,rate=tradeRate(active,ports,r),sel=trade.give===r;return <button key={r} className={"colonistResourceCard "+(sel?"selected give":"")} disabled={count<rate} onClick={()=>setTrade(t=>({...t,give:r,get:t.get===r?(RES.find(x=>x!==r)||t.get):t.get}))}><span className="tradeCardIcon">{ICON[r]}</span><b>{LABEL[r]}</b><strong>{count}</strong><small>{rate}:1</small><em>{count>=rate?"READY":"NEED "+Math.max(0,rate-count)}</em></button>})}</div></section>
     <div className="colonistTradeCenter"><div className="tradeArrow up">↑</div><div className="colonistTradeSummary"><span>{tradeRate(active,ports,trade.give)} {LABEL[trade.give]}</span><b>⇅</b><span>1 {LABEL[trade.get]}</span></div><div className="tradeArrow down">↓</div><button className="colonistTradeConfirm" disabled={trade.give===trade.get||!canPay(active?.hand||empty(),{[trade.give]:tradeRate(active,ports,trade.give)})||!(bank[trade.get]>0)} onClick={()=>{if(tradeNow())setQuickPanel(null)}}>CONFIRM TRADE</button></div>

@@ -2146,8 +2146,7 @@ function App(){
 
   const startEngineSetup=()=>{
     const b=makeEngineBoard(geo,mapSettings);
-    setEnginePlayerCount(2);
-    setEnginePlayers(makeEnginePlayers(2));
+    setEnginePlayers(makeEnginePlayers());
     setEngineBoard(b);
     setEnginePorts(makePorts(geo));
     setEngineBank(emptyBank());
@@ -2157,7 +2156,7 @@ function App(){
     setEngineSelectedTile(null);
     setEnginePieceMode("inspect");
     setEngineSelectedPiece(null);
-    setEngineTargetVP(15);
+    setEngineTargetVP(isPVBot?15:10);
     setEngineHeldAwards({roadOwner:null,armyOwner:null});
     setEngineDevCounts({...DEV});
     setEngineAnalysis(false);

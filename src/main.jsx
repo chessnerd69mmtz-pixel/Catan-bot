@@ -2500,8 +2500,50 @@ function App(){
     }
   };
   const checkWin=(ps,turnPlayerId=turn)=>{const a=awards(ps,geo,heldAwards);const actor=ps.find(p=>p.id===turnPlayerId);return actor&&actor.vp+(a.roadOwner===actor.id?2:0)+(a.armyOwner===actor.id?2:0)>=targetVP?actor:null;};
-  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{if(winner||drawn)return;const lastMove=decisionsRef.current[decisionsRef.current.length-1];if(lastMove&&lastMove.playerId===winnerPlayer?.id)lastMove.gameWinning=true;finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});if(lastMove&&lastMove.playerId===winnerPlayer?.id){lastMove.gameWinning=true;const finalFrame=analysisFramesRef.current[analysisFramesRef.current.length-1];if(finalFrame){const winSwing=Number(finalFrame.swing||finalFrame.delta||0);lastMove.classification=classifyAnalysisMove({loss:lastMove.engineLoss||0,swing:winSwing,action:lastMove.action,gameWinning:true});finalFrame.classification=lastMove.classification;finalFrame.decisions=(finalFrame.decisions||[]).map(d=>d.actionKey===lastMove.actionKey?lastMove:d);}}const finalAwards=awards(finalPlayers,geo,finalHeldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"win",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player",matchStyle,recordedInTrackRecord:matchStyle==="ranked"};const next=[snap,...history].slice(0,30);recordCompetitiveResult(snap.gameMode,winnerPlayer?.id===0?"win":"loss");setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
-  const finishDraw=(reason="Draw accepted.")=>{if(winner||drawn)return;appendLog(reason);showDuelNotice("accepted",reason);finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});const finalAwards=awards(players,geo,heldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,players),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"draw",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player",matchStyle,recordedInTrackRecord:matchStyle==="ranked"};const next=[snap,...history].slice(0,30);recordCompetitiveResult(snap.gameMode,"draw");setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
+  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{
+    if(winner||drawn)return;
+    const lastMove=decisionsRef.current[decisionsRef.current.length-1];
+    if(lastMove&&lastMove.playerId===winnerPlayer?.id)lastMove.gameWinning=true;
+    finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});
+    if(lastMove&&lastMove.playerId===winnerPlayer?.id){
+      lastMove.gameWinning=true;
+      const finalFrame=analysisFramesRef.current[analysisFramesRef.current.length-1];
+      if(finalFrame){
+        const winSwing=Number(finalFrame.swing||finalFrame.delta||0);
+        lastMove.classification=classifyAnalysisMove({loss:lastMove.engineLoss||0,swing:winSwing,action:lastMove.action,gameWinning:true});
+        finalFrame.classification=lastMove.classification;
+        finalFrame.decisions=(finalFrame.decisions||[]).map(d=>d.actionKey===lastMove.actionKey?lastMove:d);
+      }
+    }
+    const finalAwards=awards(finalPlayers,geo,finalHeldAwards);
+    const decisionList=decisionsRef.current.length?decisionsRef.current:decisions;
+    const analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers);
+    const my=analysisSummary.overall??null;
+    const gameId=currentGameIdRef.current||String(Date.now());
+    const snap={gameId,id:gameId,date:new Date().toISOString(),result:"win",status:"complete",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),startedAt:gameStarted,endedAt:Date.now(),updatedAt:Date.now(),gameMode:mode==="pvbot"?"1v1":analysisSandbox?"sandbox":"4-player",matchStyle,recordedInTrackRecord:matchStyle==="ranked",boardSetup:{tiles:clone(finalBoard),ports:clone(finalPorts),customBuilt:!!analysisSandbox}};
+    const next=[snap,...history].filter((g,i,a)=>i===a.findIndex(x=>(x.gameId||x.id)===(g.gameId||g.id))).slice(0,100);
+    recordCompetitiveResult(snap.gameMode,winnerPlayer?.id===0?"win":"loss");
+    saveLocalGame(snap);
+    setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");
+    void syncFinalGame(snap,null);
+    try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}
+  };
+  const finishDraw=(reason="Draw accepted.")=>{
+    if(winner||drawn)return;
+    appendLog(reason);showDuelNotice("accepted",reason);
+    finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});
+    const finalAwards=awards(players,geo,heldAwards);
+    const decisionList=decisionsRef.current.length?decisionsRef.current:decisions;
+    const analysisSummary=analysisRoleStats(analysisFramesRef.current,players);
+    const gameId=currentGameIdRef.current||String(Date.now());
+    const snap={gameId,id:gameId,date:new Date().toISOString(),result:"draw",status:"complete",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:analysisSummary.overall??null,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),startedAt:gameStarted,endedAt:Date.now(),updatedAt:Date.now(),gameMode:mode==="pvbot"?"1v1":analysisSandbox?"sandbox":"4-player",matchStyle,recordedInTrackRecord:matchStyle==="ranked",boardSetup:{tiles:clone(board),ports:clone(ports),customBuilt:!!analysisSandbox}};
+    const next=[snap,...history].filter((g,i,a)=>i===a.findIndex(x=>(x.gameId||x.id)===(g.gameId||g.id))).slice(0,100);
+    recordCompetitiveResult(snap.gameMode,"draw");
+    saveLocalGame(snap);
+    setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");
+    void syncFinalGame(snap,null);
+    try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}
+  };
   const resignMatch=()=>{if(!isPVBot||!active||active.bot||winner||drawn)return;const bot=players.find(p=>p.bot);if(!bot)return;appendLog(`${active.name} resigned. ${bot.name} wins the 1v1 PVBot match.`);finish(bot);showDuelNotice("accepted",`${active.name} resigned — ${bot.name} wins.`);};
   const advanceBotTurn=(localPlayers, botName, summary="All useful actions completed; passing the turn automatically.",localBoardOverride=board,localBankOverride=bank,localDeckOverride=deck)=>{
     if(!localPlayers?.length)return;

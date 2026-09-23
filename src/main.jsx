@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { analyzeGameRecord, computePlayerAnalysis, evaluateState, ENGINE_VERSION, LABEL_META, applyAnalysisMove } from "./analysis-engine.mjs";
-import { loadLearningStore, saveLearningStore, reviewFeedback, acceptFeedbackLesson, chooseLearnedCandidate, summarizeLearning, clearLearningStore } from "./learning-engine.mjs";
+import { loadLearningStore, saveLearningStore, reviewFeedback, acceptFeedbackLesson, chooseLearnedCandidate, verifyLearnedCandidate, summarizeLearning, clearLearningStore } from "./learning-engine.mjs";
 import { loadLocalGames, saveLocalGame, getCachedAnalysis, saveAnalysisCache, supabaseConfigured, getAuthSession, fetchCloudGames, mergeGameRecords, syncCompletedGame, flushSyncQueue, signInWithEmail, signUpWithEmail, signOut } from "./game-persistence.mjs";
 import AdvancedAiPanel from "./AdvancedAiPanel.jsx";
 import { BOT_PERSONALITIES, personalityForBot, personalityActionBias, personalityPlacementBias, recordEloGame } from "./advanced-ai.mjs";

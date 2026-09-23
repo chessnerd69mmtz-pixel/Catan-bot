@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { analyzeGameRecord, computePlayerAnalysis, ENGINE_VERSION, LABEL_META } from "./analysis-engine.mjs";
+import { loadLocalGames, saveLocalGame, getCachedAnalysis, saveAnalysisCache, supabaseConfigured, getAuthSession, fetchCloudGames, mergeGameRecords, syncCompletedGame, flushSyncQueue, signInWithEmail, signUpWithEmail, signOut } from "./game-persistence.mjs";
 
 const RES=["wood","brick","sheep","wheat","ore"];
 const LABEL={wood:"Wood",brick:"Brick",sheep:"Sheep",wheat:"Wheat",ore:"Ore"};

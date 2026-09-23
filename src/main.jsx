@@ -915,7 +915,7 @@ function tradeEnablerValue(action,p,players,board,geo,ports,bank,deck,targetVP,h
   return best*0.55-opponentPenalty;
 }
 function makeScoreCache(players,board,geo,ports,bank,targetVP){
-  return{legal:null,spots:new Map(),ranks:new Map(),future:new Map(),threats:new Map(),modeCfg:botModeConfig(players,targetVP)};
+  return{legal:null,spots:new Map(),placement:new Map(),ranks:new Map(),future:new Map(),threats:new Map(),modeCfg:botModeConfig(players,targetVP)};
 }
 function memoryResourcePressure(memorySnapshots,oppId){
   const pressure=Object.fromEntries(RES.map(r=>[r,0]));

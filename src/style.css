@@ -3561,3 +3561,42 @@ button,select,input{font-family:inherit}
 .placementConfirmLabel{fill:#fff;font-size:8px;font-weight:900;letter-spacing:.75px;text-anchor:middle;paint-order:stroke;stroke:#061020;stroke-width:3px;}
 .placementConfirmGhost:hover .placementConfirmHalo{fill:rgba(0,246,255,.24);stroke:#fff;stroke-width:3;}
 .setupBoardApp .placementConfirmGhost .placementConfirmLabel{fill:#ffcc00;}
+
+/* ===== GAME HISTORY Catan ENGINE ANALYSIS ===== */
+.analysisHubOverlay{align-items:stretch}
+.analysisHubCard{width:min(1180px,96vw);max-height:min(90vh,900px);overflow:auto;padding:18px}
+.analysisHubHeader{margin-bottom:12px}
+.analysisHubHeader h2{font-size:28px;letter-spacing:.04em}
+.analysisHubControls{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;margin-bottom:12px;border:1px solid rgba(0,246,255,.18);border-radius:12px;background:linear-gradient(90deg,rgba(0,246,255,.07),rgba(161,0,255,.05))}
+.analysisHubControls div{display:flex;flex-direction:column;gap:4px}
+.analysisHubControls span{font-size:10px;color:rgba(255,255,255,.58)}
+.analysisHistoryList{display:grid;gap:10px}
+.analysisHistoryCard{padding:13px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(0,0,0,.12))}
+.analysisHistoryMain{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.analysisHistoryMain span{font-size:9px;color:rgba(255,255,255,.45)}
+.analysisHistoryMain h3{margin:3px 0;font-size:17px}
+.analysisHistoryMain p{margin:0;font-size:10px;color:rgba(255,255,255,.52)}
+.analysisHistoryResult{text-align:right;min-width:130px}.analysisHistoryResult b{display:block;font-size:13px;color:#72eaff}.analysisHistoryResult small{font-size:9px;color:rgba(255,255,255,.46)}
+.analysisHistoryStats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin:11px 0}
+.analysisHistoryStats div{padding:8px 7px;border-radius:9px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);text-align:center}
+.analysisHistoryStats span{display:block;font-size:7px;letter-spacing:.1em;color:rgba(255,255,255,.42)}
+.analysisHistoryStats b{display:block;margin-top:3px;font-size:12px;color:#fff}
+.analysisHistoryActions{display:flex;gap:7px;justify-content:flex-end}
+.analysisHistoryActions button{min-height:34px}
+.analysisHubFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:11px 13px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.025)}
+.analysisHubFooter div{display:flex;flex-direction:column;gap:3px}.analysisHubFooter span{font-size:9px;color:rgba(255,255,255,.48)}
+.classification-excellent{border-color:rgba(255,210,80,.65)!important;background:rgba(255,210,80,.09)!important}
+.analysisSummaryChip.class-excellent{border-color:rgba(255,210,80,.42)}
+.engineCard .engineSegment{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.engineCard .engineSegment button{min-height:34px}
+.historyAnalyzeOverlay .refHistoryAnalyzeCard{width:min(1220px,97vw)}
+@media(max-width:900px){
+  .analysisHistoryStats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .analysisHubControls,.analysisHubFooter{align-items:flex-start;flex-direction:column}
+  .analysisHistoryMain{align-items:flex-start;flex-direction:column}
+  .analysisHistoryResult{text-align:left}
+}
+@media(max-width:620px){
+  .analysisHistoryStats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .analysisHistoryActions{flex-direction:column}
+}

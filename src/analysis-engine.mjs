@@ -228,6 +228,13 @@ function candidateMoves(state,playerId){
     const opening=(p.settlements||[]).length===0&&(p.cities||[]).length===0&&(p.roads||[]).length===0;
     for(let v=0;v<(state.geo.vertices||[]).length;v++)if(legalSettlement(v,state.players,state.geo)&&(opening||networkedVertex(v,p,state.geo)))out.push({type:"settlement",spot:v,playerId});
   }
+  for(const give of RES)for(const get of RES){
+    if(give===get)continue;
+    const owned=(p.settlements||[]).concat(p.cities||[]);
+    const matching=(state.ports||[]).filter(port=>owned.includes(port.a)||owned.includes(port.b));
+    const rate=matching.some(port=>port.type===`2:1 ${give}`)?2:matching.some(port=>port.type==="3:1")?3:4;
+    if(Number(p.hand?.[give]||0)>=rate&&Number(state.bank?.[get]??19)>0)out.push({type:"trade",give,get,rate,playerId});
+  }
   if(canPay(p.hand,COSTS.development)&&(state.deckCount||0)>0)out.push({type:"buyDev",playerId});
   if((p.development&&p.development.Knight||0)>0)out.push({type:"play",card:"Knight",playerId});
   return out.slice(0,48);

@@ -313,7 +313,7 @@ export function analyzeGameRecord(gameRecord,geo,options={}){
     const c=classifyMove({move:payload,before,after,bestAfter:sim.bestMoveWP,gameWinning:!!d.gameWinning});
     const delta=(after-before)*100,bestDelta=(sim.bestMoveWP-before)*100;
     const explanation=(delta>=0?"+":"")+delta.toFixed(1)+" WP; best alternative: "+(sim.bestMove?sim.bestMove.type:"none")+"; equity gap "+Math.max(0,bestDelta-delta).toFixed(1)+" points"+(sum((beforeState.players||[]).find(p=>p.id===d.playerId)?.hand||{})>7?" · 7+ card risk was present":"");
-    evals.push({moveId:d.moveId||String(gameRecord.id)+"-"+i,playerId:d.playerId,playerName:d.playerName,turn:d.turn,action:d.action||payload.type,payload,winProbBefore:before,winProbAfterActual:after,winProbAfterBest:sim.bestMoveWP,equityLossPct:c.equityLossPct,label:c.label,classification:c.meta,bestAlternative:sim.bestMove,rolloutCount:sim.rolloutCount,explanation});
+    evals.push({moveId:d.moveId||String(gameRecord.id)+"-"+i,playerId:d.playerId,playerName:d.playerName,turn:d.turn,action:d.action||payload.type,payload,stateBefore:beforeState,stateAfter:afterState,beforeState,afterState,winProbBefore:before,winProbAfterActual:after,winProbAfterBest:sim.bestMoveWP,equityLossPct:c.equityLossPct,label:c.label,classification:c.meta,bestAlternative:sim.bestMove,rolloutCount:sim.rolloutCount,explanation});
   }
   const perPlayer={};for(const p of gameRecord.players||[])perPlayer[p.id]=computePlayerAnalysis(p.id,evals);
   return{gameId:gameRecord.id,computedAt:Date.now(),engineVersion:ENGINE_VERSION,perPlayer,moveEvaluations:evals};

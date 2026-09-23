@@ -2059,6 +2059,47 @@ function App(){
       return next;
     });
   };
+  const persistLocalSnapshot=(status="in_progress",extra={})=>{
+    const id=currentGameIdRef.current||String(Date.now());
+    currentGameIdRef.current=id;
+    const snapshot={gameId:id,id,status,mode:isPVBot?"1v1":analysisSandbox?"sandbox":"4player",gameMode:isPVBot?"1v1":analysisSandbox?"sandbox":"4-player",startedAt:gameStarted,endedAt:status==="complete"?Date.now():null,durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),players:clone(players),board:clone(board),ports:clone(ports),targetVP,winnerId:winner?.id??null,finalScores:Object.fromEntries((players||[]).map(p=>[String(p.id),p.vp||0])),decisions:clone(decisionsRef.current),analysisFrames:clone(analysisFramesRef.current),logs:clone(logRef.current),boardSetup:{tiles:clone(board||[]),ports:clone(ports||[]),customBuilt:!!analysisSandbox},updatedAt:Date.now(),...extra};
+    pendingLiveGameRef.current=snapshot;saveLocalGame(snapshot);return snapshot;
+  };
+  const syncFinalGame=async(snapshot,analysis=null)=>{
+    saveLocalGame({...snapshot,status:"complete",analysis:analysis||snapshot.analysis,updatedAt:Date.now()});
+    if(!cloudUser)return;
+    try{setCloudStatus("syncing");await syncCompletedGame(snapshot,cloudUser.id,analysis);await flushSyncQueue(cloudUser.id);setCloudStatus("synced");}catch(error){console.error("Catan cloud sync",error);setCloudStatus("queued");}
+  };
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const session=await getAuthSession();
+        if(!alive)return;
+        setCloudUser(session.user||null);
+        if(session.user){
+          setCloudStatus("syncing");
+          const remote=await fetchCloudGames();
+          const mapped=remote.map(r=>r.payload?{...r.payload,gameId:r.game_id,id:r.game_id,updatedAt:r.updated_at}:r);
+          const merged=mergeGameRecords([...loadHistory(),...loadLocalGames()],mapped);
+          setHistory(merged.slice(0,100));
+          await flushSyncQueue(session.user.id);
+          setCloudStatus("synced");
+        }
+      }catch(error){if(alive){console.error("Catan persistence init",error);setCloudStatus("error");}}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  const submitAuth=async()=>{
+    setAuthMessage("");
+    try{
+      const result=authMode==="signin"?await signInWithEmail(authEmail.trim(),authPassword):await signUpWithEmail(authEmail.trim(),authPassword);
+      if(result.error)throw result.error;
+      const session=result.data?.session||result.data?.user?await getAuthSession():result.data?.session;
+      setCloudUser(session?.user||result.data?.user||null);setAuthOpen(false);setCloudStatus("synced");setAuthMessage("Cloud account connected.");
+    }catch(error){setAuthMessage(String(error?.message||error));}
+  };
+  const disconnectCloud=async()=>{try{await signOut();setCloudUser(null);setCloudStatus(supabaseConfigured?"ready":"local-only");}catch(error){setAuthMessage(String(error?.message||error));}};
   const queueActionConfirm=(key,label,onConfirm)=>{
     if(!["draw","resign"].includes(key)) return;
     if(actionConfirmTimerRef.current)window.clearTimeout(actionConfirmTimerRef.current);

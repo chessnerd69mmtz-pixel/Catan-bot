@@ -3380,6 +3380,9 @@ function App(){
         if(failedActions>=10){appendLog(`${p.name} exhausted invalid-action retries after replanning; preserving the best completed line.`);finalizeBotTurn();return;}
         resetBotPlanningCache();window.setTimeout(iterateBot,0);return;
       }
+      if(best.learningVerified){
+        appendLog(`🧠 ${p.name} used a verified learned move: ${actionLabel(best)}. User feedback beat the previous engine best under the statistical rollout gate.`);
+      }
       const engineTop3=(best.engineTop3||[]);
       const chosenEngine=engineTop3.find(x=>x.action===actionLabel(best));
       const engineBestScore=Number.isFinite(engineTop3[0]?.score)?Number(engineTop3[0].score):Number(best.score)||0;

@@ -1994,7 +1994,7 @@ function App(){
     const onKey=(e)=>{
       if(tab!=="historyAnalyze"||!analysisReplay)return;
       const k=e.key;
-      if(k==="\\"||k==="]"||k==="ArrowRight"){e.preventDefault();setAnalysisIndex(i=>Math.min((analysisMovesFromFrames(analysisReplay.analysisFrames||[]).length||1)-1,i+1));}
+      if(k==="\\"||k==="]"||k==="ArrowRight"){e.preventDefault();setAnalysisIndex(i=>Math.min((analysisReplay.analysisFrames?.length||1)-1,i+1));}
       else if(k==="/"||k==="["||k==="ArrowLeft"){e.preventDefault();setAnalysisIndex(i=>Math.max(0,i-1));}
     };
     window.addEventListener("keydown",onKey);

@@ -1105,7 +1105,92 @@ function analysisRoleStats(frames,players){
   const out={overall:analysisAccuracy(frames),players:{}};
   for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(moves,p.id),turns:moves.filter(f=>f.playerId===p.id).length};
   return out;
-}function analysisResultToFrames(game,analysis){
+}
+const ANALYSIS_ERROR_KEYS=new Set(["inaccuracy","mistake","blunder"]);
+const ANALYSIS_CATEGORY_META={
+  production:"PRODUCTION",
+  diversity:"RESOURCE DIVERSITY",
+  blocking:"BLOCKING",
+  expansion:"EXPANSION",
+  port:"PORT ACCESS",
+  longestRoad:"LONGEST ROAD",
+  largestArmy:"LARGEST ARMY",
+  development:"DEVELOPMENT",
+  trade:"TRADE",
+  robber:"ROBBER",
+  endgame:"ENDGAME",
+  tempo:"TEMPO",
+  general:"POSITIONAL"
+};
+function replayMoveSeverity(move){
+  const loss=Number(move?.equityLossPct!=null?move.equityLossPct:Number(move?.engineLoss||0)*100);
+  const swing=Math.abs(Number(move?.delta||move?.swing||0)*100);
+  if(loss>=18||swing>=15)return {key:"game-changing",label:"GAME-CHANGING",text:"This move materially changed the modeled direction of the game."};
+  if(loss>=12||swing>=10)return {key:"major",label:"MAJOR",text:"A major loss of modeled position value."};
+  if(loss>=5||swing>=5)return {key:"significant",label:"SIGNIFICANT",text:"A meaningful strategic loss worth reviewing."};
+  if(loss>=2||swing>=2)return {key:"minor",label:"MINOR",text:"A small but measurable loss of position value."};
+  return {key:"negligible",label:"NEGLIGIBLE",text:"Very little measurable position value was lost."};
+}
+function replayStrategicCategory(move){
+  const a=move?.payload||{};
+  const type=String(a.type||move?.action||"").toLowerCase();
+  const card=String(a.card||"").toLowerCase();
+  if(type.includes("settlement")||type.includes("city"))return type.includes("city")?"development":"expansion";
+  if(type.includes("road"))return "longestRoad";
+  if(type.includes("trade")||type.includes("bank"))return "trade";
+  if(type.includes("robber")||type.includes("discard"))return "robber";
+  if(type.includes("buydev")||type.includes("development")||card)return "development";
+  if(card.includes("knight"))return "largestArmy";
+  if(type.includes("roll"))return "tempo";
+  if(type.includes("end"))return "endgame";
+  return "general";
+}
+function criticalReplayMoves(moves=[]){
+  return (moves||[]).map((m,index)=>({...m,_index:index,severity:replayMoveSeverity(m),category:replayStrategicCategory(m)}))
+    .sort((a,b)=>((Number(b.equityLossPct||0)+Math.abs(Number(b.delta||0))*100*.6)-(Number(a.equityLossPct||0)+Math.abs(Number(a.delta||0))*100*.6)))
+    .slice(0,8);
+}
+function replayCoachReport(moves=[],players=[]){
+  const critical=criticalReplayMoves(moves);
+  const worst=critical[0], best=[...(moves||[])].sort((a,b)=>Number(b.delta||0)-Number(a.delta||0))[0];
+  const focus={};
+  for(const m of moves||[]){const k=m.classification?.key||"good";focus[k]=(focus[k]||0)+1;}
+  const weakest=Object.entries(focus).filter(([k])=>ANALYSIS_ERROR_KEYS.has(k)).sort((a,b)=>b[1]-a[1])[0];
+  const points=[];
+  if(worst)points.push(`Study turn ${worst.turn}: ${worst.action||"move"} — ${worst.severity.label.toLowerCase()} impact. Compare it against the engine alternative before replaying the next position.`);
+  if(weakest)points.push(`Your largest recurring review category is ${ANALYSIS_CLASSIFICATIONS.find(x=>x.key===weakest[0])?.label||weakest[0]} (${weakest[1]} move${weakest[1]===1?"":"s"}). Use the position explanations rather than only the final rating.`);
+  if(best)points.push(`The strongest modeled swing came from ${best.playerName||"a player"} on turn ${best.turn}. Revisit that decision to identify the repeatable pattern behind it.`);
+  return points.slice(0,3);
+}
+function replayGameStory(moves=[],game=null){
+  if(!moves.length)return "No analyzed moves were saved for this match.";
+  const best=[...moves].sort((a,b)=>Number(b.delta||0)-Number(a.delta||0))[0];
+  const worst=[...moves].sort((a,b)=>Number(b.equityLossPct||0)-Number(a.equityLossPct||0))[0];
+  const critical=criticalReplayMoves(moves);
+  const counts=ANALYSIS_CLASSIFICATIONS.map(x=>`${x.label} ${moves.filter(m=>m.classification?.key===x.key).length}`).join(" · ");
+  const result=game?.result==="draw"?"The match finished as a draw.":game?.winner?(`${game.winner} finished first.`):"The match was completed.";
+  return `${result} The replay contains ${moves.length} analyzed decisions. The largest positive modeled swing was turn ${best.turn} by ${best.playerName||"the player"}; the largest engine loss was turn ${worst.turn}. ${critical.length} critical moments were selected for review. Classification mix: ${counts}.`;
+}
+function replayPlacementRanking(state,playerId,geo,limit=8){
+  const p=(state?.players||[]).find(x=>String(x.id)===String(playerId));
+  if(!p||!geo?.vertices?.length)return[];
+  const players=state.players||[];
+  const rankings=[];
+  for(let v=0;v<geo.vertices.length;v++){
+    if(!legalSettlement(v,players,geo))continue;
+    const score=placementScore(v,p,players,state.board||[],geo,state.ports||[],state.bank||emptyBank(),state.targetVP||10,state.heldAwards||{roadOwner:null,armyOwner:null},makeScoreCache(players,state.board||[],geo,state.ports||[],state.bank||emptyBank(),state.targetVP||10));
+    rankings.push({v,score,production:spotProduction(v,state.board||[],geo)});
+  }
+  return rankings.sort((a,b)=>b.score-a.score).slice(0,limit);
+}
+function replayWinLikelihoodPath(moves=[],playerId){
+  return (moves||[]).map((m,i)=>{
+    const after=(m.afterOdds||[]).find(x=>String(x.id)===String(playerId));
+    const before=(m.beforeOdds||[]).find(x=>String(x.id)===String(playerId));
+    return {i,move:m,prob:Number(after?.prob??before?.prob??0)};
+  });
+}
+function analysisResultToFrames(game,analysis){
   const groups=new Map();
   for(const e of analysis?.moveEvaluations||[]){
     const key=String(e.turn??0);const beforeOdds=e.stateBefore?evaluateState({...e.stateBefore,geo}):{};const afterOdds=e.stateAfter?evaluateState({...e.stateAfter,geo}):{};let frame=groups.get(key);if(!frame){frame={turn:Number(e.turn||0),playerId:e.playerId,playerName:e.playerName,isBot:!!game?.players?.find(p=>p.id===e.playerId)?.bot,action:e.action||"Move",delta:(e.winProbAfterActual||0)-(e.winProbBefore||0),swing:(e.winProbAfterActual||0)-(e.winProbBefore||0),engineLoss:(e.equityLossPct||0)/100,beforeOdds:Object.entries(beforeOdds).map(([id,prob])=>({id:Number.isFinite(Number(id))?Number(id):id,name:(e.stateBefore?.players||[]).find(p=>String(p.id)===String(id))?.name||String(id),prob})),afterOdds:Object.entries(afterOdds).map(([id,prob])=>({id:Number.isFinite(Number(id))?Number(id):id,name:(e.stateAfter?.players||[]).find(p=>String(p.id)===String(id))?.name||String(id),prob})),before:e.stateBefore,after:e.stateAfter,decisions:[]};groups.set(key,frame);}frame.decisions.push({...e,action:e.action,playerId:e.playerId,playerName:e.playerName,bot:!!frame.isBot,isBot:!!frame.isBot,classification:LABEL_META[e.label]||e.classification,equityLossPct:Number(e.equityLossPct||0),engineLoss:(e.equityLossPct||0)/100,recommended:e.bestAlternative?.type||"Best alternative",match:e.bestAlternative?JSON.stringify(e.payload)===JSON.stringify(e.bestAlternative):false,before:e.stateBefore,after:e.stateAfter});frame.classification=LABEL_META[e.label]||e.classification||frame.classification;}

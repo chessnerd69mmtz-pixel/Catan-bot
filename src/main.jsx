@@ -992,7 +992,11 @@ function analysisMoveClassification(decision,frame){
 function analysisMovesFromFrames(frames=[]){
   return (frames||[]).flatMap(frame=>{
     if(Array.isArray(frame.decisions)&&frame.decisions.length)return frame.decisions.map(d=>({...d,turn:frame.turn,playerId:d.playerId??frame.playerId,playerName:d.playerName??frame.playerName,isBot:d.bot??frame.isBot,classification:d.classification||analysisMoveClassification(d,frame),delta:frame.delta,afterOdds:frame.afterOdds,beforeOdds:frame.beforeOdds}));
-    return frame?.classification?.key?[{...frame}]:[];
+    if(frame?.classification?.key){
+      const legacyKey=frame.classification.key==="great"?"excellent":frame.classification.key;
+      return [{...frame,classification:ANALYSIS_CLASSIFICATIONS.find(x=>x.key===legacyKey)||frame.classification}];
+    }
+    return [];
   });
 }
 function analysisAccuracy(frames,playerId=null){

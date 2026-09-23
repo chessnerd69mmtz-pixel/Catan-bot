@@ -3335,11 +3335,39 @@ function App(){
   const boardAnalysis=useMemo(()=>{if(!analysisMode||!board||!active)return[];const cache=makeScoreCache(players,board,geo,ports,bank,targetVP);return geo.vertices.map((_,i)=>({v:i,score:placementScore(i,active,players,board,geo,ports,bank,targetVP,heldAwards,cache),legal:legalSettlement(i,players,geo)})).sort((a,b)=>b.score-a.score).slice(0,12)},[analysisMode,geo,active,players,board,ports,bank,targetVP,heldAwards]);
   const reviewPlayers=reviewGame?.players||players,reviewBoard=reviewGame?.board||board,reviewPorts=reviewGame?.ports||ports,reviewAwards=reviewGame?.awards||award,reviewWinner=reviewGame?(reviewGame.winnerId!=null?(reviewGame.players.find(p=>p.id===reviewGame.winnerId)||reviewGame.players[0]):null):winner,reviewAccuracy=reviewGame?.accuracy??playerAccuracy;
   const clearHistory=()=>{try{[HISTORY_KEY,...LEGACY_HISTORY_KEYS].forEach(k=>localStorage.removeItem(k))}catch{}setHistory([])};
-  const openHistoryAnalyze=(g)=>{
-    if(!g?.result||!g?.analysisFrames?.length)return;
-    setAnalysisReplay(g);setAnalysisIndex(0);
-    if(g?.board&&g?.players){setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);setTurn(g.winnerId!=null?(g.players.findIndex(p=>p.id===g.winnerId)>=0?g.players.findIndex(p=>p.id===g.winnerId):0):0);setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);}
-    setTab("historyAnalyze");setScreen("playing");
+  const openHistoryAnalyze=async(g)=>{
+    if(!g?.result)return;
+    const gameId=g.gameId||String(g.id);
+    const game={...g,gameId};
+    setAnalysisReplay(game);setAnalysisIndex(0);setAnalysisBusy(true);setTab("historyAnalyze");setScreen("playing");
+    if(g?.board&&g?.players){
+      setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);
+      setTurn(g.winnerId!=null?(g.players.findIndex(p=>p.id===g.winnerId)>=0?g.players.findIndex(p=>p.id===g.winnerId):0):0);
+      setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);
+    }
+    try{
+      let analysis=analysisCache[gameId]||getCachedAnalysis(gameId);
+      if(!analysis&&(g.decisions?.length||g.analysisFrames?.length)){
+        await new Promise(resolve=>setTimeout(resolve,0));
+        analysis=analyzeGameRecord(game,geo,{N:24,horizon:6});
+        saveAnalysisCache(gameId,analysis);
+        setAnalysisCacheState(prev=>({...prev,[gameId]:analysis}));
+        if(cloudUser)void syncFinalGame(game,analysis);
+      }
+      if(analysis){
+        const frames=g.analysisFrames?.length?g.analysisFrames:analysisResultToFrames(game,analysis);
+        const enriched={...game,analysis,analysisFrames:frames,accuracy:Object.values(analysis.perPlayer||{}).filter(x=>x.playerId===0).map(x=>x.accuracy)[0]??game.accuracy};
+        setAnalysisReplay(enriched);
+        setHistory(prev=>prev.map(item=>(item.gameId||String(item.id))===gameId?enriched:item));
+      }else{
+        setAnalysisReplay({...game,analysisUnavailable:true,analysisUnavailableReason:g.status==="abandoned"||g.status==="disconnected"?"The match ended before a complete move log was saved.":"This older match does not contain the move log required for engine analysis."});
+      }
+    }catch(error){
+      console.error("Catan game analysis",error);
+      setAnalysisReplay({...game,analysisUnavailable:true,analysisUnavailableReason:"The saved match could not be analyzed safely. The original result and board remain available."});
+    }finally{
+      setAnalysisBusy(false);
+    }
   };
   const startNew=()=>{if(botHardStopRef.current){window.clearTimeout(botHardStopRef.current);botHardStopRef.current=null;}cancelActionConfirm();if(duelNoticeTimerRef.current)window.clearTimeout(duelNoticeTimerRef.current);duelNoticeTimerRef.current=null;gameRunRef.current+=1;strategicPlansRef.current={};setMode(10);setScreen("setup");setTab("game");setReviewGame(null);setWinner(null);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;timerTurnTokenRef.current=null;timerExpiredTokenRef.current=null;setDuelNotice(null);setTurnSecondsLeft(TURN_BASE_SECONDS);setTradeOffer(null);setChatMessages([]);setChatUnread(0);setSidePanel("activity");setRulesOpen(false);if(botTradeTimeoutRef.current)window.clearTimeout(botTradeTimeoutRef.current);botTradeTimeoutRef.current=null;botTradeResumeRef.current=null;setTradeOffer(null);};
   const goHome=()=>{if(botHardStopRef.current){window.clearTimeout(botHardStopRef.current);botHardStopRef.current=null;}cancelActionConfirm();if(duelNoticeTimerRef.current)window.clearTimeout(duelNoticeTimerRef.current);duelNoticeTimerRef.current=null;gameRunRef.current+=1;strategicPlansRef.current={};setScreen("home");setTab("game");setWinner(null);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;timerTurnTokenRef.current=null;timerExpiredTokenRef.current=null;setDuelNotice(null);setChatMessages([]);setChatUnread(0);setSidePanel("activity");setRulesOpen(false);if(botTradeTimeoutRef.current)window.clearTimeout(botTradeTimeoutRef.current);botTradeTimeoutRef.current=null;botTradeResumeRef.current=null;setTradeOffer(null);};

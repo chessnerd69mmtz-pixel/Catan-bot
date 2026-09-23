@@ -3662,3 +3662,26 @@ button,select,input{font-family:inherit}
 .neonFeatureStrip{background:rgba(0,23,35,.74)}
 .neonHomeFooter{color:#9bdde8;border-color:rgba(116,255,255,.25);background:rgba(0,18,28,.45)}
 @keyframes cyanPulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 8px rgba(0,246,255,.35))}50%{transform:scale(1.08);filter:drop-shadow(0 0 24px rgba(0,246,255,.8))}}
+
+
+/* ===== Catan Analysis System / Sandbox ===== */
+.analysisHubActionGroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.analysisAuthPanel{align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px;padding:10px 12px;border:1px solid rgba(0,246,255,.18);border-radius:12px;background:rgba(0,246,255,.035)}
+.analysisAuthPanel input,.analysisAuthPanel select{min-width:150px;padding:9px 10px;border-radius:8px;border:1px solid rgba(0,246,255,.22);background:#071324;color:#fff}
+.analysisAuthPanel span{font-size:9px;color:rgba(255,255,255,.58);max-width:420px}
+.analysisUnavailableCard{padding:28px;border:1px solid rgba(255,193,7,.28);border-radius:14px;background:rgba(255,193,7,.05);line-height:1.55}
+.analysisUnavailableCard b{display:block;font-size:15px;color:#ffe09a}
+.analysisUnavailableCard p{margin:10px 0 0;color:rgba(255,255,255,.56);font-size:11px}
+.sandboxBoardTools .sandboxPalette{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0 10px}
+.sandboxPalette button{min-height:54px;padding:7px;border-radius:10px;border:1px solid rgba(0,246,255,.18);background:rgba(0,246,255,.035);color:#fff;cursor:grab;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.sandboxPalette button:active{cursor:grabbing}
+.sandboxPalette button:hover{border-color:rgba(0,246,255,.55);background:rgba(0,246,255,.08);transform:translateY(-1px)}
+.sandboxPalette button span{font-size:21px}
+.sandboxPalette button b{font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.sandboxValidation{margin-top:8px;padding:9px 10px;border-radius:9px;font-size:9px;line-height:1.4}
+.sandboxValidation.valid{border:1px solid rgba(0,255,150,.24);background:rgba(0,255,150,.05);color:#b8ffd8}
+.sandboxValidation.hasErrors{border:1px solid rgba(255,80,90,.25);background:rgba(255,80,90,.06);color:#ffd0d4}
+.sandboxValidation b,.sandboxValidation span{display:block}
+.engineEditorHint{border:1px dashed rgba(0,246,255,.16);border-radius:9px;padding:8px 10px;color:rgba(255,255,255,.6);font-size:9px}
+.engineCard input[type=number]{box-sizing:border-box}
+.engineCard button:disabled{opacity:.38;cursor:not-allowed;transform:none!important}

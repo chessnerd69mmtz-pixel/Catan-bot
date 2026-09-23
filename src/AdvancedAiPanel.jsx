@@ -10,7 +10,7 @@ import {
   personalityForBot,
   summarizeAiPerformance
 } from "./advanced-ai.mjs";
-import { makeGeometry } from "../tests/logic-core.mjs";
+import { makeAdvancedGeometry } from "./advanced-ai.mjs";
 
 const fmt = n => Number.isFinite(n) ? Number(n).toFixed(1) : "—";
 
@@ -41,7 +41,7 @@ export default function AdvancedAiPanel({history = [], onClose, onOpenReplay, re
   const loadHeatmap = () => {
     const frame = findFrame();
     if (!frame) return;
-    const geo = makeGeometry();
+    const geo = makeAdvancedGeometry();
     const enrichedFrame = {...frame, geo};
     const data = heatmapForFrame(enrichedFrame, personalityForBot(selectedBot).id);
     setHeatmapData(data);

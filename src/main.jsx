@@ -942,7 +942,7 @@ function fastHumanRecommendation(p,players,board,geo,ports,bank,deck,targetVP,he
 }
 function aiPlan(p,players,board,geo,deck,ports,targetVP,bank=emptyBank(),heldAwards={roadOwner:null,armyOwner:null},turnState={}){const best=fastHumanRecommendation(p,players,board,geo,ports,bank,deck,targetVP,heldAwards);return{...best,reason:decisionReason(best,p,players,board,geo,ports,bank,targetVP)};}
 function decisionReason(action,p,players,board,geo,ports,bank,targetVP){if(action.type==="settlement"){const nf=NeedProfile(p,players,board,geo,bank,botModeConfig(players,targetVP)),sp=spotProduction(action.spot,board,geo),parts=RES.filter(r=>sp[r]>0).sort((a,b)=>sp[b]*nf.need[b]-sp[a]*nf.need[a]).slice(0,3).map(r=>`+P(${r} ${(sp[r]*36).toFixed(1)}) +Need(${nf.need[r].toFixed(2)})`);if(portAt(action.spot,ports)&&action.portEligibleForTie)parts.push(`+Port tie-break(${portAt(action.spot,ports).type})`);return parts.join(" ")+` => V=${action.score.toFixed(2)}, chosen`;}if(action.type==="city")return `+VP(1) +production doubled at ${action.spot} => V=${action.score.toFixed(2)}, chosen`;if(action.type==="road")return `+E(expansion) +Y(road network) => V=${action.score.toFixed(2)}, chosen`;if(action.type==="trade")return `+T(port/bank conversion) ${LABEL[action.give]}→${LABEL[action.get]} => V=${action.score.toFixed(2)}, chosen`;if(action.type==="buyDev")return `+cardExpectedUtility => V=${action.score.toFixed(2)}, chosen`;if(action.type==="play")return `+${action.card} strategic value => V=${action.score.toFixed(2)}, chosen`;return `No positive action => pass`}
-function actionLabel(a){return a?.type==="buyDev"?"Development card":a?.type==="settlement"?"Settlement":a?.type==="road"?"Road":a?.type==="city"?"City":a?.type==="trade"||a?.type==="playerTrade"?"Trade":a?.type==="play"?`Play ${a.card}`:a?.type||"Pass";}
+function actionLabel(a){return a?.type==="buyDev"?"Development card":a?.type==="settlement"?"Settlement":a?.type==="road"?"Road":a?.type==="city"?"City":a?.type==="trade"||a?.type==="playerTrade"?"Trade":a?.type==="play"?`Play ${a.card}`:a?.type==="roll_dice"?"Roll dice":a?.type==="end_turn"?"End turn":a?.type==="discard"?"Discard cards":a?.type==="move_robber"?"Move robber":a?.type||"Pass";}
 function loadHistory(){
   try{
     const keys=[HISTORY_KEY,LEGACY_MONOPOLY_HISTORY_KEY,...LEGACY_HISTORY_KEYS];
@@ -1194,6 +1194,10 @@ function decisionKeyForEngine(a){
   if(a.type==="trade")return `trade:${a.give}:${a.get}:${a.rate}`;
   if(a.type==="playerTrade")return `playerTrade:${a.partner}:${JSON.stringify(a.giveBundle||{[a.give]:a.giveAmount})}:${JSON.stringify(a.getBundle||{[a.get]:a.getAmount})}`;
   if(a.type==="play")return `play:${a.card}`;
+  if(a.type==="roll_dice")return `roll_dice:${a.diceRoll??"pending"}`;
+  if(a.type==="end_turn")return `end_turn:${a.reason||""}`;
+  if(a.type==="discard")return `discard:${JSON.stringify(a.cards||a.discarded||{})}`;
+  if(a.type==="move_robber")return `move_robber:${a.tid??""}:${a.victimId??""}`;
   return a.type;
 }
 function makeEnginePlayers(count=2){
@@ -2397,16 +2401,25 @@ function App(){
     if(a.type==="play")return "play:"+a.card;
     return a.type;
   };
+  const analysisSnapshot=()=>({players:clone(players),board:clone(board),ports:clone(ports),bank:clone(bank),deckCount:deck.length,heldAwards:clone(heldAwards),turnNumber});
   const recordDecision=(player,action)=>{
     if(!player?.bot&&board){
-      const rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards);
-      let scored=[];try{scored=scoreActions(player,players,board,geo,ports,bank,deck,targetVP,heldAwards,{botAutoplay:false});}catch{}
-      const chosen=scored.find(x=>decisionKeyForEngine(x)===decisionKeyForEngine(action));
-      const bestScore=Number.isFinite(rec?.score)?Number(rec.score):(scored[0]?.score??0);
-      const chosenScore=Number.isFinite(chosen?.score)?Number(chosen.score):bestScore;
+      const stateBefore=analysisSnapshot();
+      const previous=decisionsRef.current[decisionsRef.current.length-1];
+      if(previous&&!previous.stateAfter)previous.stateAfter=stateBefore;
+      const simple=["roll_dice","end_turn","discard","move_robber"].includes(action?.type);
+      let rec=null,scored=[],chosen=null,bestScore=0,chosenScore=0;
+      if(!simple){
+        try{rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards)}catch{}
+        try{scored=scoreActions(player,players,board,geo,ports,bank,deck,targetVP,heldAwards,{botAutoplay:false})}catch{}
+        chosen=scored.find(x=>decisionKeyForEngine(x)===decisionKeyForEngine(action));
+        bestScore=Number.isFinite(rec?.score)?Number(rec.score):(scored[0]?.score??0);
+        chosenScore=Number.isFinite(chosen?.score)?Number(chosen.score):bestScore;
+      }
       const scale=Math.max(20,Math.abs(bestScore)+20);
-      const engineLoss=Math.max(0,Math.min(1,(bestScore-chosenScore)/scale));
-      const item={turn:turnNumber,playerId:player.id,playerName:player.name,action:actionLabel(action),recommended:actionLabel(rec),actionKey:decisionKey(action),recommendedKey:decisionKey(rec),match:decisionKey(action)===decisionKey(rec),engineBestScore:bestScore,engineChosenScore:chosenScore,engineLoss};
+      const engineLoss=simple?0:Math.max(0,Math.min(1,(bestScore-chosenScore)/scale));
+      const moveId=`${currentGameIdRef.current||"game"}-${turnNumber}-${decisionsRef.current.length+1}`;
+      const item={moveId,turn:turnNumber,playerId:player.id,playerName:player.name,isBot:!!player.bot,action:actionLabel(action),actionType:action.type,payload:clone(action),recommended:simple?actionLabel(action):actionLabel(rec),actionKey:decisionKeyForEngine(action),recommendedKey:simple?decisionKeyForEngine(action):decisionKeyForEngine(rec),match:simple?true:decisionKeyForEngine(action)===decisionKeyForEngine(rec),engineBestScore:bestScore,engineChosenScore:chosenScore,engineLoss,stateBefore,gameWinning:false,timestamp:Date.now()};
       decisionsRef.current=[...decisionsRef.current,item];setDecisions(decisionsRef.current);
     }
   };

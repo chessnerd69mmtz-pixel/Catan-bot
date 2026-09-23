@@ -2010,6 +2010,8 @@ function App(){
   const botTradeTimeoutRef=useRef(null);
   const playersStateRef=useRef([]);
   const strategicPlansRef=useRef({});
+  const currentGameIdRef=useRef(null);
+  const pendingLiveGameRef=useRef(null);
   useEffect(()=>{playersStateRef.current=players},[players]);
   const [botTurnStatus,setBotTurnStatus]=useState("idle");
   const targetVP=mode==="pvbot"?15:10;const isPVBot=mode==="pvbot";const active=players[turn];
@@ -2403,7 +2405,7 @@ function App(){
   };
   const analysisSnapshot=()=>({players:clone(players),board:clone(board),ports:clone(ports),bank:clone(bank),deckCount:deck.length,heldAwards:clone(heldAwards),turnNumber});
   const recordDecision=(player,action)=>{
-    if(!player?.bot&&board){
+    if(player&&board){
       const stateBefore=analysisSnapshot();
       const previous=decisionsRef.current[decisionsRef.current.length-1];
       if(previous&&!previous.stateAfter)previous.stateAfter=stateBefore;

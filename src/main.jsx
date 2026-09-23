@@ -56,35 +56,80 @@ const BOT_LONGEST_ROAD_PRIORITY=0.05;
 const MUSIC_KEY="monopoly.backgroundMusic.v2";
 const LEGACY_MUSIC_KEY="hexbound.backgroundMusic.v1";
 
-function createViolinLoop(){
+function createNeonDriveLoop(){
   const AudioCtx=window.AudioContext||window.webkitAudioContext;
   if(!AudioCtx)return ()=>{};
   const ctx=new AudioCtx();
-  const master=ctx.createGain(); master.gain.value=0.055; master.connect(ctx.destination);
-  const notes=[
-    261.63,293.66,329.63,392.00,329.63,293.66,261.63,196.00,
-    220.00,261.63,329.63,440.00,392.00,329.63,293.66,220.00
-  ];
-  const step=0.42; let index=0; let stopped=false; let timer=null;
+  const master=ctx.createGain();
+  master.gain.value=0.042;
+  master.connect(ctx.destination);
+
+  // Original procedural synthwave: bright, fast, neon-arcade energy.
+  // It intentionally does not use a copyrighted recording.
+  const bpm=126;
+  const step=60/bpm/2; // eighth-note grid
+  const bass=[55,55,65.41,73.42,82.41,73.42,65.41,61.74,55,55,65.41,73.42,98,82.41,73.42,65.41];
+  const arp=[220,261.63,329.63,392,329.63,261.63,220,164.81,220,293.66,349.23,440,349.23,293.66,220,164.81];
+  let index=0,stopped=false,timer=null;
+
+  const tone=(freq,duration,type,gainValue,filterFreq,when=ctx.currentTime)=>{
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    const filter=ctx.createBiquadFilter();
+    osc.type=type;
+    osc.frequency.setValueAtTime(freq,when);
+    filter.type="lowpass";
+    filter.frequency.value=filterFreq;
+    filter.Q.value=.7;
+    gain.gain.setValueAtTime(.0001,when);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002,gainValue),when+.008);
+    gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
+    osc.connect(filter);filter.connect(gain);gain.connect(master);
+    osc.start(when);osc.stop(when+duration+.015);
+  };
+
+  const kick=(when)=>{
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type="sine";
+    osc.frequency.setValueAtTime(150,when);
+    osc.frequency.exponentialRampToValueAtTime(48,when+.12);
+    gain.gain.setValueAtTime(.0001,when);
+    gain.gain.exponentialRampToValueAtTime(.11,when+.006);
+    gain.gain.exponentialRampToValueAtTime(.0001,when+.13);
+    osc.connect(gain);gain.connect(master);osc.start(when);osc.stop(when+.15);
+  };
+
+  const noise=(when,duration=.055,level=.018)=>{
+    const buffer=ctx.createBuffer(1,Math.max(1,Math.floor(ctx.sampleRate*duration)),ctx.sampleRate);
+    const data=buffer.getChannelData(0);
+    for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,.6);
+    const src=ctx.createBufferSource(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
+    filter.type="highpass";filter.frequency.value=4200;
+    gain.gain.setValueAtTime(level,when);gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
+    src.buffer=buffer;src.connect(filter);filter.connect(gain);gain.connect(master);src.start(when);src.stop(when+duration);
+  };
+
   const schedule=()=>{
     if(stopped)return;
-    const start=ctx.currentTime+0.025;
-    const osc=ctx.createOscillator();
-    const vibrato=ctx.createOscillator();
-    const vibGain=ctx.createGain();
-    const filter=ctx.createBiquadFilter();
-    const gain=ctx.createGain();
-    osc.type="sawtooth"; osc.frequency.value=notes[index%notes.length];
-    vibrato.frequency.value=5.4; vibGain.gain.value=5.5; vibrato.connect(vibGain); vibGain.connect(osc.frequency);
-    filter.type="lowpass"; filter.frequency.value=1850; filter.Q.value=0.7;
-    gain.gain.setValueAtTime(0.0001,start); gain.gain.linearRampToValueAtTime(0.045,start+0.05); gain.gain.exponentialRampToValueAtTime(0.018,start+step*0.72); gain.gain.exponentialRampToValueAtTime(0.0001,start+step*0.98);
-    osc.connect(filter); filter.connect(gain); gain.connect(master);
-    osc.start(start); vibrato.start(start); osc.stop(start+step); vibrato.stop(start+step);
-    index++; timer=window.setTimeout(schedule,step*1000);
+    const when=ctx.currentTime+.02;
+    const beat=index%16;
+    tone(bass[beat],step*1.75,"square",.024,900,when);
+    tone(arp[beat],step*.82,"sawtooth",.010,2800,when);
+    if(beat%2===0)kick(when);
+    if(beat===4||beat===12)noise(when,.13,.026);
+    else noise(when+step/2,.035,.010);
+    index++;
+    timer=window.setTimeout(schedule,step*1000);
   };
+
   if(ctx.state==="suspended")ctx.resume().catch(()=>{});
   schedule();
-  return ()=>{stopped=true;if(timer)window.clearTimeout(timer);try{master.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.08)}catch{};window.setTimeout(()=>ctx.close().catch(()=>{}),120);};
+  return ()=>{
+    stopped=true;
+    if(timer)window.clearTimeout(timer);
+    try{master.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.08)}catch{}
+    window.setTimeout(()=>ctx.close().catch(()=>{}),120);
+  };
 }
 function rollOfficialDice(){return [1+Math.floor(Math.random()*6),1+Math.floor(Math.random()*6)];}
 
@@ -1961,7 +2006,7 @@ function App(){
       return;
     }
     if(!musicCleanupRef.current){
-      try{musicCleanupRef.current=createViolinLoop();}catch{musicCleanupRef.current=null;}
+      try{musicCleanupRef.current=createNeonDriveLoop();}catch{musicCleanupRef.current=null;}
     }
     return undefined;
   },[musicEnabled,screen]);
@@ -2215,7 +2260,7 @@ function App(){
   const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers(enginePlayerCount));setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(enginePlayerCount===2?15:10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
 
   const startGame=()=>{
-    if(musicEnabled&&!musicCleanupRef.current){try{musicCleanupRef.current=createViolinLoop();}catch{}}
+    if(musicEnabled&&!musicCleanupRef.current){try{musicCleanupRef.current=createNeonDriveLoop();}catch{}}
     gameRunRef.current+=1;
     const b=makeBoard(geo,mapSettings);
     const ps=isPVBot
@@ -3132,7 +3177,7 @@ function App(){
       <div className="analysisHubControls"><div><b>GAME HISTORY ANALYZER</b><span>Result and time played are shown before you open a review.</span></div><button className="refPrimaryButton" onClick={()=>startEngineSetup()}>CUSTOM BOARD BUILDER →</button></div>
       <div className="analysisHistoryList">{history.length?history.slice(0,30).map(g=>{const moves=analysisMovesFromFrames(g.analysisFrames||[]);const botMoves=moves.filter(m=>m.isBot);const botAccuracy=botMoves.length?Math.round(botMoves.reduce((s,m)=>s+(ANALYSIS_ACCURACY_WEIGHT[m.classification?.key]??50),0)/botMoves.length):null;return <article className="analysisHistoryCard" key={g.id}><div className="analysisHistoryMain"><div><span>{fmtDate(g.date)}</span><h3>{g.result==="draw"?"DRAW":(g.winner||"GAME COMPLETE")}</h3><p>{g.gameMode==="1v1"?"1v1 · 15 VP":"4 PLAYER · 10 VP"} · {(g.players||[]).map(p=>p.name).join(" · ")}</p></div><div className="analysisHistoryResult"><b>{g.result==="draw"?"DRAW":(g.winner||"WINNER")}</b><small>{g.targetVP} VP target</small></div></div><div className="analysisHistoryStats"><div><span>RESULT</span><b>{g.result==="draw"?"DRAW":(g.winner||"—")}</b></div><div><span>TIME PLAYED</span><b>{fmtDuration(g.durationSeconds)}</b></div><div><span>GAME ACCURACY</span><b>{g.accuracy==null?"—":g.accuracy+"%"}</b></div><div><span>MOVES</span><b>{moves.length}</b></div><div><span>BOTS</span><b>{botAccuracy==null?"—":botAccuracy+"%"}</b></div></div><div className="analysisHistoryActions"><button className="openHistory" onClick={()=>openHistoryAnalyze(g)} disabled={!g.result||!g.analysisFrames?.length}>ANALYZE GAME →</button><button className="refGhostButton" onClick={()=>{setReviewGame(g);setBoard(g.board);setPlayers(g.players);setPorts(g.ports||[]);setTurn(g.winnerId||0);setWinner(g.result==="draw"?{id:null,name:"Draw",vp:0}:null);setDrawn(g.result==="draw");setLogEntries(g.logs||[]);setTab("postgame")}}>VIEW RESULT</button></div></article>}) : <div className="refEmpty"><h3>No completed games yet</h3><p>Finish a game to populate the Catan Engine review archive.</p><button className="refPrimaryButton" onClick={()=>{closeOverlay();startNew()}}>START NEW GAME</button></div>}</div>
       <section className="themePickerCard"><div><span className="eyebrow">UI THEME</span><h3>Accent & Glow</h3><p>Choose the neon accent used across the analysis and game HUD.</p></div><div className="themeSwatches">{Object.keys(UI_THEMES).map(name=><button key={name} className={"themeSwatch "+(theme===name?"selected":"")} style={{"--swatch":UI_THEMES[name].cyan}} onClick={()=>setTheme(name)}><span></span><b>{name}</b></button>)}</div></section>
-      <section className="musicSettingsCard"><div><span className="eyebrow">AMBIENT AUDIO</span><h3>Violin background music</h3><p>Looping instrumental ambience for the table.</p></div><button className={"musicToggle "+(musicEnabled?"on":"off")} onClick={()=>setMusicEnabled(v=>!v)}><span>{musicEnabled?"ON":"OFF"}</span><b>{musicEnabled?"♫ PLAYING":"♫ MUTED"}</b></button></section>
+      <section className="musicSettingsCard"><div><span className="eyebrow">AMBIENT AUDIO</span><h3>Neon Drive background music</h3><p>Upbeat synthwave energy for the table.</p></div><button className={"musicToggle "+(musicEnabled?"on":"off")} onClick={()=>setMusicEnabled(v=>!v)}><span>{musicEnabled?"ON":"OFF"}</span><b>{musicEnabled?"♫ PLAYING":"♫ MUTED"}</b></button></section>
       <div className="analysisHubFooter"><div><b>Custom analysis</b><span>Choose 1v1 or 4-player, set the board and game state, then run the engine.</span></div><button className="refGhostButton" onClick={()=>startEngineSetup()}>OPEN ANALYSIS LAB →</button></div>
     </div></div>
   ):null;

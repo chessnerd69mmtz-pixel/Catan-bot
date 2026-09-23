@@ -69,3 +69,16 @@ The Analysis tab lists completed games with result, timestamp, duration, move co
 ### Custom Analysis Lab
 
 The Analysis section provides **1v1 / 15 VP** and **4-player / 10 VP** board-builder modes. You can edit terrain, number tokens, ports, starting pieces, cards, VP, bank and awards. **Analyze Position** reviews the configured position; **Play & Analyze** launches a sandbox game where Player 1 is human and the remaining sides are engine opponents, with the same analysis frames recorded as normal games.
+
+## Advanced Catan AI
+
+Version 7 adds an AI Lab built on the existing game engine. It deliberately does **not** include an AI tournament/bracket mode.
+
+- **Five bot personalities:** Maya (balanced), Rook (expansionist), Nova (port/trader), Atlas (knight/raider) and Vega (resource diversifier). Personality bias is applied inside the live bot action and settlement scoring paths.
+- **Persistent ELO:** ranked completed games update browser-local ELO ratings with a K-factor of 32. Ratings are idempotent per game and cover the human profile plus bot personalities.
+- **Monte Carlo placement lab:** bounded randomized placement rollouts produce mean, P10/P90 and stability measures for candidate intersections.
+- **Settlement heatmaps:** completed-game analysis frames can be converted into an explainability heatmap showing legal candidate intersections, production, resource diversity, numbers and ports.
+- **Replay/history integration:** the existing completed-game analysis and replay pipeline remains the source of saved positions and move frames.
+- **Performance profiling:** the AI Lab summarizes completed bot games, win/loss/draw records, decision accuracy and settlement-choice volume without creating a tournament ladder.
+
+The Advanced AI Lab is opened from the in-game navigation under **AI Lab**.

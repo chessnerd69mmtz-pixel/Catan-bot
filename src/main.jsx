@@ -106,12 +106,6 @@ const pay=(h,c)=>{const x={...h};Object.entries(c).forEach(([r,n])=>x[r]=(x[r]||
 const add=(h,c)=>{const x={...h};Object.entries(c).forEach(([r,n])=>x[r]=(x[r]||0)+n);return x};
 const shuffle=a=>{const x=[...a];for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]];}return x};
 const fmtDate=d=>new Date(d).toLocaleString([], {dateStyle:"medium",timeStyle:"short"});
-const fmtDuration=seconds=>{
-  const s=Math.max(0,Number(seconds)||0);
-  if(!s)return "—";
-  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
-  return h ? h+"h "+String(m).padStart(2,"0")+"m" : m ? m+"m "+String(sec).padStart(2,"0")+"s" : sec+"s";
-};
 
 function makeGeometry(){
   const centers=[];
@@ -972,48 +966,29 @@ const UI_THEMES={
   Orange:{cyan:"#ffb347",green:"#ffd166",blue:"#ff9f43",purple:"#ff8c42",pink:"#ff7849",yellow:"#ffe39a",border:"#87502a"}
 };
 const ANALYSIS_CLASSIFICATIONS=[
-  {key:"blunder",icon:"💥",label:"BLUNDER"},
-  {key:"mistake",icon:"❓",label:"MISTAKE"},
-  {key:"inaccuracy",icon:"🟡",label:"INACCURACY"},
-  {key:"good",icon:"🟢",label:"GOOD"},
-  {key:"excellent",icon:"⭐",label:"EXCELLENT"},
-  {key:"brilliant",icon:"💎",label:"BRILLIANT"}
+  {key:"blunder",icon:"💥",label:"BLUNDER",min:-Infinity,max:-0.08},
+  {key:"mistake",icon:"❓",label:"MISTAKE",min:-0.08,max:-0.03},
+  {key:"inaccuracy",icon:"🟡",label:"INACCURACY",min:-0.03,max:0.015},
+  {key:"good",icon:"🟢",label:"GOOD",min:0.015,max:0.035},
+  {key:"great",icon:"⭐",label:"GREAT",min:0.035,max:0.08},
+  {key:"brilliant",icon:"💎",label:"BRILLIANT",min:0.08,max:Infinity}
 ];
-const ANALYSIS_ACCURACY_WEIGHT={blunder:0,mistake:20,inaccuracy:50,good:75,excellent:92,brilliant:100};
-function analysisMoveIsBuild(action=""){
-  return /settlement|city|road/i.test(String(action));
+function classifyAnalysisMove(delta,actionType="") {
+  const d=Number(delta)||0;
+  const base=ANALYSIS_CLASSIFICATIONS.find(x=>d>=x.min&&d<x.max)||ANALYSIS_CLASSIFICATIONS[2];
+  if(base.key==="brilliant"&&["robber","play Monopoly"].some(x=>String(actionType).includes(x)))return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="great");
+  return base;
 }
-function classifyAnalysisMove({loss=0,delta=0,action="",gameWinning=false}={}){
-  const normalizedLoss=Math.max(0,Math.min(1,Number(loss)||0));
-  const winWithoutBuild=!!gameWinning&&!analysisMoveIsBuild(action);
-  if(winWithoutBuild&&normalizedLoss<=0.015)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="brilliant");
-  if(normalizedLoss<=0.015)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="excellent");
-  if(normalizedLoss<=0.05)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="good");
-  if(normalizedLoss<=0.12)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="inaccuracy");
-  if(normalizedLoss<=0.22)return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="mistake");
-  return ANALYSIS_CLASSIFICATIONS.find(x=>x.key==="blunder");
-}
-function analysisMoveClassification(decision,frame){
-  const loss=decision?.engineLoss!=null?decision.engineLoss:(frame?.engineLoss!=null?frame.engineLoss:Math.max(0,-Number(frame?.delta||0)));
-  return classifyAnalysisMove({loss,delta:frame?.delta||0,action:decision?.action||frame?.action||"",gameWinning:!!decision?.gameWinning});
-}
-function analysisMovesFromFrames(frames=[]){
-  return (frames||[]).flatMap(frame=>{
-    if(Array.isArray(frame.decisions)&&frame.decisions.length){
-      return frame.decisions.map(d=>({...d,turn:frame.turn,playerId:d.playerId??frame.playerId,playerName:d.playerName??frame.playerName,isBot:d.bot??frame.isBot,classification:d.classification||analysisMoveClassification(d,frame),delta:frame.delta,afterOdds:frame.afterOdds,beforeOdds:frame.beforeOdds}));
-    }
-    return frame?.classification?.key?[{...frame}]:[];
-  });
-}
+
+const ANALYSIS_ACCURACY_WEIGHT={blunder:0,mistake:20,inaccuracy:50,good:75,great:90,brilliant:100};
 function analysisAccuracy(frames,playerId=null){
-  const usable=analysisMovesFromFrames(frames).filter(f=>f?.classification?.key && (playerId==null||f.playerId===playerId));
+  const usable=(frames||[]).filter(f=>f?.classification?.key && (playerId==null||f.playerId===playerId));
   if(!usable.length)return null;
   return Math.round(usable.reduce((sum,f)=>sum+(ANALYSIS_ACCURACY_WEIGHT[f.classification.key]??50),0)/usable.length);
 }
 function analysisRoleStats(frames,players){
-  const moves=analysisMovesFromFrames(frames);
   const out={overall:analysisAccuracy(frames),players:{}};
-  for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(moves,p.id),turns:moves.filter(f=>f.playerId===p.id).length};
+  for(const p of players||[])out.players[p.id]={name:p.name,bot:!!p.bot,accuracy:analysisAccuracy(frames,p.id),turns:(frames||[]).filter(f=>f.playerId===p.id&&f.classification).length};
   return out;
 }
 function themeVars(name){
@@ -1133,9 +1108,8 @@ function decisionKeyForEngine(a){
   if(a.type==="play")return `play:${a.card}`;
   return a.type;
 }
-function makeEnginePlayers(count=2){
-  const names=count===4?["Player 1","Player 2","Player 3","Player 4"]:["Side A","Side B"];
-  return names.map((name,id)=>newPlayer(id,name,false,"Human"));
+function makeEnginePlayers(){
+  return [newPlayer(0,"Side A",false,"Human"),newPlayer(1,"Side B",false,"Human")];
 }
 function makeEngineBoard(geo,settings){return makeBoard(geo,settings);}
 
@@ -2165,10 +2139,8 @@ function App(){
     const meBefore=pending.beforeOdds.find(x=>x.id===pending.playerId)?.prob??0.5;
     const meAfter=afterOdds.find(x=>x.id===pending.playerId)?.prob??meBefore;
     const delta=meAfter-meBefore;
-    const frameLoss=decisionsForTurn.length?Math.min(...decisionsForTurn.map(d=>Number.isFinite(d.engineLoss)?d.engineLoss:1)):Math.max(0,-delta);
-    const frameClassification=classifyAnalysisMove({loss:frameLoss,delta,action:mainAction,gameWinning:false});
-    const classifiedDecisions=decisionsForTurn.map(d=>({...d,classification:analysisMoveClassification(d,{delta,engineLoss:d.engineLoss})}));
-    const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta,engineLoss:frameLoss,classification:frameClassification,beforeOdds:clone(pending.beforeOdds),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:{players:clone(ps),board:clone(bd),ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null})},decisions:classifiedDecisions,moves:classifiedDecisions,summary};
+    const classification=classifyAnalysisMove(delta,mainAction);
+    const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta,classification,beforeOdds:clone(pending.beforeOdds),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:{players:clone(ps),board:clone(bd),ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null})},decisions:clone(decisionsForTurn),summary};
     analysisFramesRef.current=[...analysisFramesRef.current,frame];
     analysisTurnRef.current=null;
   };
@@ -2314,33 +2286,11 @@ function App(){
   },[screen,setupRound,setupIndex,currentSetupPlayer?.id,gameStarted]);
   useEffect(()=>{if(screen!=="setupBoard"||!currentSetupPlayer?.bot)return;const timer=setTimeout(autoBotSetup,0);return()=>clearTimeout(timer)},[screen,setupIndex,setupRound,players]);
 
-  const decisionKey=a=>{
-    if(!a)return"pass";
-    if(["settlement","road","city"].includes(a.type))return a.type+":"+a.spot;
-    if(a.type==="trade")return "trade:"+a.give+":"+a.get+":"+a.rate;
-    if(a.type==="playerTrade")return "playerTrade:"+a.partner+":"+JSON.stringify(a.giveBundle||{[a.give]:a.giveAmount})+":"+JSON.stringify(a.getBundle||{[a.get]:a.getAmount});
-    if(a.type==="play")return "play:"+a.card;
-    return a.type;
-  };
-  const recordDecision=(player,action)=>{
-    if(!player?.bot&&board){
-      const rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards);
-      let scored=[];try{scored=scoreActions(player,players,board,geo,ports,bank,deck,targetVP,heldAwards,{botAutoplay:false});}catch{}
-      const chosen=scored.find(x=>decisionKeyForEngine(x)===decisionKeyForEngine(action));
-      const bestScore=Number.isFinite(rec?.score)?Number(rec.score):(scored[0]?.score??0);
-      const chosenScore=Number.isFinite(chosen?.score)?Number(chosen.score):bestScore;
-      const scale=Math.max(20,Math.abs(bestScore)+20);
-      const engineLoss=Math.max(0,Math.min(1,(bestScore-chosenScore)/scale));
-      const item={turn:turnNumber,playerId:player.id,playerName:player.name,action:actionLabel(action),recommended:actionLabel(rec),actionKey:decisionKey(action),recommendedKey:decisionKey(rec),match:decisionKey(action)===decisionKey(rec),engineBestScore:bestScore,engineChosenScore:chosenScore,engineLoss};
-      decisionsRef.current=[...decisionsRef.current,item];setDecisions(decisionsRef.current);
-    }
-  };
+  const decisionKey=a=>{if(!a)return"pass";if(["settlement","road","city"].includes(a.type))return `${a.type}:${a.spot}`;if(a.type==="trade")return `trade:${a.give}:${a.get}:${a.rate}`;if(a.type==="playerTrade")return `playerTrade:${a.partner}:${JSON.stringify(a.giveBundle||{[a.give]:a.giveAmount})}:${JSON.stringify(a.getBundle||{[a.get]:a.getAmount})}`;if(a.type==="play")return `play:${a.card}`;return a.type;};
+  const recordDecision=(player,action)=>{if(!player.bot&&board){const rec=aiPlan(player,players,board,geo,deck,ports,targetVP,bank,heldAwards);const item={turn:turnNumber,playerId:player.id,playerName:player.name,action:actionLabel(action),recommended:actionLabel(rec),actionKey:decisionKey(action),recommendedKey:decisionKey(rec),match:decisionKey(action)===decisionKey(rec)};decisionsRef.current=[...decisionsRef.current,item];setDecisions(decisionsRef.current);}};
   const checkWin=(ps,turnPlayerId=turn)=>{const a=awards(ps,geo,heldAwards);const actor=ps.find(p=>p.id===turnPlayerId);return actor&&actor.vp+(a.roadOwner===actor.id?2:0)+(a.armyOwner===actor.id?2:0)>=targetVP?actor:null;};
-  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{if(winner||drawn)return;
-    const winningList=decisionsRef.current;
-    const lastMove=winningList[winningList.length-1];
-    if(lastMove&&lastMove.playerId===winnerPlayer?.id)lastMove.gameWinning=true;finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});const finalAwards=awards(finalPlayers,geo,finalHeldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"win",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player"};const next=[snap,...history].slice(0,30);setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
-  const finishDraw=(reason="Draw accepted.")=>{if(winner||drawn)return;appendLog(reason);showDuelNotice("accepted",reason);finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});const finalAwards=awards(players,geo,heldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,players),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"draw",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current),durationSeconds:Math.max(0,Math.round((Date.now()-gameStarted)/1000)),gameMode:mode==="pvbot"?"1v1":"4-player"};const next=[snap,...history].slice(0,30);setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
+  const finish=(winnerPlayer,finalPlayers=players,finalBoard=board,finalPorts=ports,finalHeldAwards=heldAwards,finalBank=bank,finalDeck=deck)=>{if(winner||drawn)return;finalizeAnalysisTurn({ps:finalPlayers,bd:finalBoard,pr:finalPorts,bk:finalBank,dk:finalDeck,ha:finalHeldAwards,summary:"Match ended"});const finalAwards=awards(finalPlayers,geo,finalHeldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,finalPlayers),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"win",winner:winnerPlayer.name,winnerId:winnerPlayer.id,players:clone(finalPlayers),board:clone(finalBoard),ports:clone(finalPorts),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current)};const next=[snap,...history].slice(0,30);setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
+  const finishDraw=(reason="Draw accepted.")=>{if(winner||drawn)return;appendLog(reason);showDuelNotice("accepted",reason);finalizeAnalysisTurn({ps:players,bd:board,pr:ports,bk:bank,dk:deck,ha:heldAwards,summary:"Match ended in a draw"});const finalAwards=awards(players,geo,heldAwards),decisionList=decisionsRef.current.length?decisionsRef.current:decisions,analysisSummary=analysisRoleStats(analysisFramesRef.current,players),my=analysisSummary.overall??(decisionList.length?Math.round(decisionList.filter(d=>d.match).length/decisionList.length*100):null);const snap={id:Date.now(),date:new Date().toISOString(),result:"draw",winner:"Draw",winnerId:null,drawMessage:reason,players:clone(players),board:clone(board),ports:clone(ports),awards:clone(finalAwards),accuracy:my,analysisSummary,targetVP,settings:clone(mapSettings),decisions:clone(decisionList),memory:clone(memoryRef.current),logs:clone(logRef.current),analysisFrames:clone(analysisFramesRef.current)};const next=[snap,...history].slice(0,30);setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}};
   const resignMatch=()=>{if(!isPVBot||!active||active.bot||winner||drawn)return;const bot=players.find(p=>p.bot);if(!bot)return;appendLog(`${active.name} resigned. ${bot.name} wins the 1v1 PVBot match.`);finish(bot);showDuelNotice("accepted",`${active.name} resigned — ${bot.name} wins.`);};
   const advanceBotTurn=(localPlayers, botName, summary="All useful actions completed; passing the turn automatically.",localBoardOverride=board,localBankOverride=bank,localDeckOverride=deck)=>{
     if(!localPlayers?.length)return;
@@ -3021,7 +2971,7 @@ function App(){
       const engineChosenScore=Number.isFinite(chosenEngine?.score)?Number(chosenEngine.score):engineBestScore;
       const engineScale=Math.max(20,Math.abs(engineBestScore)+20);
       const engineLoss=Math.max(0,Math.min(1,(engineBestScore-engineChosenScore)/engineScale));
-      const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineBestScore,engineChosenScore,engineLoss,engineTop3:engineTop3.map(x=>({action:actionLabel(x),score:x.score}))};
+      const botDecision={turn:turnNumber,playerId:p.id,playerName:p.name,action:actionLabel(best),recommended:actionLabel(rawBest),actionKey:decisionKey(best),recommendedKey:decisionKey(rawBest),match:decisionKey(best)===decisionKey(rawBest),bot:true,engineTop3:(best.engineTop3||[]).map(x=>({action:actionLabel(x),score:x.score}))};
       decisionsRef.current=[...decisionsRef.current,botDecision];
       setDecisions(decisionsRef.current);
       if(best.type==="road")botRoadsThisTurn++;

@@ -3552,3 +3552,12 @@ button,select,input{font-family:inherit}
 
 /* Strategic bot trade offer explanation */
 .tradeOfferObjective{margin:8px 0;padding:9px 10px;border-radius:9px;border:1px solid rgba(0,246,255,.16);background:rgba(0,246,255,.045);color:#9cc5df;font-size:10px;line-height:1.45}
+
+
+/* Colonist-inspired two-click board placement: select a location, then confirm the floating piece. */
+.placementConfirmGhost{cursor:pointer;pointer-events:auto;filter:drop-shadow(0 0 10px rgba(0,246,255,.55));}
+.placementConfirmGhost .placementConfirmHalo{fill:rgba(0,246,255,.10);stroke:#00f6ff;stroke-width:2;stroke-dasharray:5 4;}
+.placementConfirmGhost .settlementPiece3d,.placementConfirmGhost .cityPiece3d{pointer-events:none;opacity:.96;}
+.placementConfirmLabel{fill:#fff;font-size:8px;font-weight:900;letter-spacing:.75px;text-anchor:middle;paint-order:stroke;stroke:#061020;stroke-width:3px;}
+.placementConfirmGhost:hover .placementConfirmHalo{fill:rgba(0,246,255,.24);stroke:#fff;stroke-width:3;}
+.setupBoardApp .placementConfirmGhost .placementConfirmLabel{fill:#ffcc00;}

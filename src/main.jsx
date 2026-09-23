@@ -3649,6 +3649,7 @@ function App(){
       </main>
       {analysis_block}
       {history_block}
+      {history_analyze_render}
       {post_block}
       {rulesOpen&&<div className="refOverlay"><div className="refOverlayCard hxHelpCard"><button className="refClose" onClick={()=>setRulesOpen(false)}>×</button>
         <div className="refOverlayHead"><div><span className="eyebrow">QUICK REFERENCE</span><h2>HOW TO PLAY</h2><p>Roll, collect, build and trade. First to {targetVP} victory points wins.</p></div></div>

@@ -57,6 +57,29 @@ export function personalityIdForBot(nameOrId) {
   return personalityForBot(nameOrId).id;
 }
 
+export function makeAdvancedGeometry() {
+  const centers=[];
+  for(let q=-2;q<=2;q++) for(let r=-2;r<=2;r++) if(Math.max(Math.abs(q),Math.abs(r),Math.abs(q+r))<=2) centers.push({q,r});
+  const R=76,U=Math.sqrt(3)*R/2;
+  const offsets=[[U,-R/2],[U,R/2],[0,R],[-U,R/2],[-U,-R/2],[0,-R]];
+  const center=(q,r)=>[U*(2*q+r),1.5*R*r];
+  const key=(x,y)=>`${x.toFixed(3)},${y.toFixed(3)}`;
+  const vMap=new Map(),vertices=[];
+  const tiles=centers.map((c,i)=>{
+    const [cx,cy]=center(c.q,c.r),vids=[];
+    offsets.forEach(([dx,dy])=>{const x=cx+dx,y=cy+dy,k=key(x,y);if(!vMap.has(k)){vMap.set(k,vertices.length);vertices.push({x,y});}vids.push(vMap.get(k));});
+    return {id:i,q:c.q,r:c.r,cx,cy,vertices:vids};
+  });
+  const edgeMap=new Map(),edges=[];
+  tiles.forEach(t=>{for(let k=0;k<6;k++){const a=t.vertices[k],b=t.vertices[(k+1)%6],ek=a<b?`${a}-${b}`:`${b}-${a}`;if(!edgeMap.has(ek)){edgeMap.set(ek,edges.length);edges.push({id:edges.length,a:Math.min(a,b),b:Math.max(a,b)});}}});
+  const vertexTiles=vertices.map(()=>[]),vertexEdges=vertices.map(()=>[]);
+  tiles.forEach(t=>t.vertices.forEach(v=>vertexTiles[v].push(t.id)));
+  edges.forEach(e=>{vertexEdges[e.a].push(e.id);vertexEdges[e.b].push(e.id);});
+  const neighbors=vertices.map((_,i)=>[...new Set(vertexEdges[i].map(eid=>{const e=edges[eid];return e.a===i?e.b:e.a;}))]);
+  const coastal=vertices.map((_,i)=>vertexTiles[i].length<3);
+  return {tiles,vertices,edges,vertexTiles,vertexEdges,neighbors,coastal};
+}
+
 const RES = ["wood", "brick", "sheep", "wheat", "ore"];
 const PIP = {2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 
@@ -214,7 +237,7 @@ export function applyEloGame(game, store = defaultEloStore(), options = {}) {
 
   const k = Number(options.kFactor || store.kFactor || DEFAULT_K);
   const players = game.players.map(p => ({...p, eloKey: eloPlayerKey(p)}));
-  const next = structuredClone ? structuredClone(store) : JSON.parse(JSON.stringify(store));
+  const next = typeof structuredClone === "function" ? structuredClone(store) : JSON.parse(JSON.stringify(store));
   const changes = {};
   players.forEach(p => {
     if (!next.profiles[p.eloKey]) next.profiles[p.eloKey] = makeProfile(p.eloKey, p.bot ? p.name : "You");

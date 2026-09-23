@@ -3493,6 +3493,32 @@ function App(){
   const goHome=()=>{if(botHardStopRef.current){window.clearTimeout(botHardStopRef.current);botHardStopRef.current=null;}cancelActionConfirm();if(duelNoticeTimerRef.current)window.clearTimeout(duelNoticeTimerRef.current);duelNoticeTimerRef.current=null;gameRunRef.current+=1;strategicPlansRef.current={};setScreen("home");setTab("game");setWinner(null);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;timerTurnTokenRef.current=null;timerExpiredTokenRef.current=null;setDuelNotice(null);setChatMessages([]);setChatUnread(0);setSidePanel("activity");setRulesOpen(false);if(botTradeTimeoutRef.current)window.clearTimeout(botTradeTimeoutRef.current);botTradeTimeoutRef.current=null;botTradeResumeRef.current=null;setTradeOffer(null);};
 
   const closeOverlay=()=>{cancelActionConfirm();setTab("game");setQuickPanel(null);setDevOpen(false);setTradeOffer(null);setRobberVictim(null);setAnalysisReplay(null);setAnalysisIndex(0);setAnalysisPlaying(false);setAnalysisSpeed(1);setAnalysisPauseOnError(false);setAnalysisPerspectiveId(0);setAnalysisShowAlternative(false);};
+  const practiceReplayPosition=(move)=>{
+    const state=move?.before||move?.stateBefore;
+    if(!state?.board||!state?.players?.length)return;
+    const nextPlayers=clone(state.players).map((p,i)=>({...p,bot:!!p.bot,diff:p.diff||"Hard",personality:p.personality||(!p.bot?"human":personalityForBot(p.name).id)}));
+    setEnginePlayerCount(nextPlayers.length);
+    setEnginePlayers(nextPlayers);
+    setEngineBoard(clone(state.board));
+    setEnginePorts(clone(state.ports||analysisReplay?.ports||[]));
+    setEngineBank(clone(state.bank||emptyBank()));
+    setEngineDeck(Array.isArray(state.deck)?clone(state.deck):devDeck());
+    setEngineActive(Number(move.playerId??state.turn??0));
+    setEngineStage("action");
+    setEngineSelectedTile(null);
+    setEnginePieceMode("inspect");
+    setEngineSelectedPiece(null);
+    setEngineTargetVP(Number(analysisReplay?.targetVP||state.targetVP||(nextPlayers.length===2?15:10)));
+    setEngineHeldAwards(clone(state.heldAwards||analysisReplay?.awards||{roadOwner:null,armyOwner:null}));
+    setEngineDevCounts({...DEV});
+    setEngineAnalysis(false);
+    setEngineCustomOpen(false);
+    setAnalysisSandbox(false);
+    setAnalysisPlaying(false);
+    setAnalysisShowAlternative(false);
+    setTab("game");
+    setScreen("engineSetup");
+  };
   const overlayTitle=tab==="analysis"?"BOARD ANALYSIS":tab==="history"?"MATCH HISTORY":"POST-GAME REVIEW";
   const analysis_block=tab==="analysis"?(
     <div className="refOverlay analysisHubOverlay"><div className="refOverlayCard analysisHubCard"><button className="refClose" onClick={closeOverlay}>×</button>
@@ -3509,31 +3535,200 @@ function App(){
   const replayMoves=analysisMovesFromFrames(replayFrames);
   const replayMove=replayMoves[Math.min(analysisIndex,Math.max(0,replayMoves.length-1))];
   const replayHumanMoves=replayMoves.filter(f=>!f.isBot);
-  useEffect(()=>{
-    if(tab!=="historyAnalyze"||!analysisPlaying||replayMoves.length<2)return;
-    const timer=window.setInterval(()=>{
-      setAnalysisIndex(i=>{
-        if(i>=replayMoves.length-1){setAnalysisPlaying(false);return i;}
-        return i+1;
-      });
-    },1400);
-    return()=>window.clearInterval(timer);
-  },[tab,analysisPlaying,replayMoves.length]);
   const replayBotMoves=replayMoves.filter(f=>f.isBot);
+  const replayFilteredMoves=analysisPerspectiveId==="all"?replayMoves:replayMoves.filter(f=>String(f.playerId)===String(analysisPerspectiveId));
   const replayBreakdown=ANALYSIS_CLASSIFICATIONS.map(c=>({key:c.key,icon:c.icon,label:c.label,count:replayMoves.filter(f=>f.classification?.key===c.key).length}));
   const replayHumanAccuracy=analysisAccuracy(replayHumanMoves);
   const replayBotAccuracy=analysisAccuracy(replayBotMoves);
   const replayOverallAccuracy=analysisAccuracy(replayMoves);
+  const replayPerspectiveId=analysisPerspectiveId==="all"?(analysisReplay?.players?.find(p=>!p.bot)?.id??analysisReplay?.players?.[0]?.id??0):analysisPerspectiveId;
+  const replayPerspectivePlayer=(analysisReplay?.players||[]).find(p=>String(p.id)===String(replayPerspectiveId))||analysisReplay?.players?.[0];
+  const replayGraphData=replayWinLikelihoodPath(replayMoves,replayPerspectiveId);
+  const replayGraphWidth=760,replayGraphHeight=190,replayGraphPad=18;
+  const replayGraphPoints=replayGraphData.map((x,i)=>{
+    const denom=Math.max(1,replayGraphData.length-1);
+    const px=replayGraphPad+(i/denom)*(replayGraphWidth-replayGraphPad*2);
+    const py=replayGraphHeight-replayGraphPad-Math.max(0,Math.min(1,x.prob))*(replayGraphHeight-replayGraphPad*2);
+    return {x:px,y:py,move:x.move,i};
+  });
+  const replayGraphPolyline=replayGraphPoints.map(p=>p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+  const replayCritical=criticalReplayMoves(replayMoves);
+  const replayCoach=replayCoachReport(replayMoves,analysisReplay?.players||[]);
+  const replayStory=replayGameStory(replayMoves,analysisReplay);
+  const replayBeforeState=replayMove?.before||replayMove?.stateBefore;
+  const replayActualState=replayMove?.after||replayMove?.stateAfter;
+  const replayAlternativeMove=replayMove?.bestAlternative||null;
+  const replayAlternativeState=replayAlternativeMove&&replayBeforeState?applyAnalysisMove(replayBeforeState,replayAlternativeMove,geo):null;
+  const replayVisibleState=analysisShowAlternative&&replayAlternativeState?replayAlternativeState:replayActualState;
+  const replayAction={...(replayMove?.payload||{}),type:replayMove?.payload?.type||String(replayMove?.action||"").split(" ")[0].toLowerCase(),playerId:replayMove?.playerId};
+  const replayWhyRows=replayMove&&replayBeforeState?engineActionBreakdown(replayAction,{active:(replayBeforeState.players||[]).find(p=>String(p.id)===String(replayMove.playerId))||replayBeforeState.players?.[0],players:replayBeforeState.players||[],board:replayBeforeState.board||[],geo,ports:replayBeforeState.ports||[],bank:replayBeforeState.bank||emptyBank(),deck:replayBeforeState.deck||[],targetVP:replayBeforeState.targetVP||analysisReplay?.targetVP||10,heldAwards:replayBeforeState.heldAwards||analysisReplay?.awards||{roadOwner:null,armyOwner:null}}):[];
+  const replayOpeningRanking=replayMove&&replayBeforeState&&replayAction.type==="settlement"?replayPlacementRanking(replayBeforeState,replayMove.playerId,geo,8):[];
+  const replaySeverity=replayMove?replayMove.severity||replayMoveSeverity(replayMove):null;
+  const replayBeforePlayer=replayBeforeState?.players?.find(p=>String(p.id)===String(replayMove?.playerId));
+  const replayAfterPlayer=replayActualState?.players?.find(p=>String(p.id)===String(replayMove?.playerId));
+  const replayChanged=replayBeforeState&&replayActualState&&replayBeforePlayer&&replayAfterPlayer?{
+    vp:(replayAfterPlayer.vp||0)-(replayBeforePlayer.vp||0),
+    hand:total(replayAfterPlayer.hand||empty())-total(replayBeforePlayer.hand||empty()),
+    production:analysisProductionScore(replayAfterPlayer,replayActualState.board||[],geo)-analysisProductionScore(replayBeforePlayer,replayBeforeState.board||[],geo),
+    odds:(Number((replayMove?.afterOdds||[]).find(x=>String(x.id)===String(replayMove.playerId))?.prob||0)-Number((replayMove?.beforeOdds||[]).find(x=>String(x.id)===String(replayMove.playerId))?.prob||0))
+  }:null;
+  useEffect(()=>{
+    if(tab!=="historyAnalyze"||!analysisPlaying||replayMoves.length<2)return;
+    const intervalMs=1400/Math.max(.25,Number(analysisSpeed)||1);
+    const timer=window.setInterval(()=>{
+      setAnalysisIndex(i=>{
+        if(i>=replayMoves.length-1){setAnalysisPlaying(false);return i;}
+        const next=i+1;
+        const nextMove=replayMoves[next];
+        if(analysisPauseOnError&&ANALYSIS_ERROR_KEYS.has(nextMove?.classification?.key))setAnalysisPlaying(false);
+        return next;
+      });
+    },intervalMs);
+    return()=>window.clearInterval(timer);
+  },[tab,analysisPlaying,replayMoves.length,analysisSpeed,analysisPauseOnError]);
+  useEffect(()=>{setAnalysisShowAlternative(false)},[analysisIndex]);
+
   const analysisUnavailableBlock=tab==="historyAnalyze"&&analysisReplay?.analysisUnavailable?(
-    <div className="refOverlay historyAnalyzeOverlay"><div className="refOverlayCard refHistoryAnalyzeCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">CATAN ENGINE · ANALYSIS UNAVAILABLE</span><h2>GAME SAVED, ANALYSIS NOT AVAILABLE</h2><p>{analysisReplay.winner?`${analysisReplay.winner} · `:""}{fmtDate(analysisReplay.date)} · {fmtDuration(analysisReplay.durationSeconds)}</p></div></div><div className="analysisUnavailableCard"><b>{analysisReplay.analysisUnavailableReason||"This saved game does not contain enough move data for engine analysis."}</b><p>The original result, final score, board and game log remain preserved. New games will capture the full move/state history needed for the Catan Engine.</p></div><div className="analysisHistoryActions"><button className="refPrimaryButton" onClick={()=>{setReviewGame(analysisReplay);setTab("postgame")}}>VIEW SAVED RESULT</button><button className="refGhostButton" onClick={closeOverlay}>CLOSE</button></div></div></div>
+    <div className="refOverlay historyAnalyzeOverlay"><div className="refOverlayCard refHistoryAnalyzeCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">CATAN ENGINE · ANALYSIS UNAVAILABLE</span><h2>GAME SAVED, ANALYSIS NOT AVAILABLE</h2><p>{analysisReplay.winner?analysisReplay.winner+" · ":""}{fmtDate(analysisReplay.date)} · {fmtDuration(analysisReplay.durationSeconds)}</p></div></div><div className="analysisUnavailableCard"><b>{analysisReplay.analysisUnavailableReason||"This saved game does not contain enough move data for engine analysis."}</b><p>The original result, board and game log remain preserved. New games capture the full move/state history needed by the Catan Engine.</p></div><div className="analysisHistoryActions"><button className="refPrimaryButton" onClick={()=>{setReviewGame(analysisReplay);setTab("postgame")}}>VIEW SAVED RESULT</button><button className="refGhostButton" onClick={closeOverlay}>CLOSE</button></div></div></div>
   ):null;
+
   const history_analyze_block=tab==="historyAnalyze"&&analysisReplay?.result&&replayMoves.length?(
-    <div className="refOverlay historyAnalyzeOverlay"><div className="refOverlayCard refHistoryAnalyzeCard"><button className="refClose" onClick={closeOverlay}>×</button>
-      <div className="refOverlayHead"><div><span className="eyebrow">CATAN ENGINE · MOVE REVIEW</span><h2>GAME ANALYZER</h2><p>{analysisReplay.result==="draw"?"DRAW":(analysisReplay.winner||"GAME COMPLETE")} · {fmtDate(analysisReplay.date)} · {fmtDuration(analysisReplay.durationSeconds)} · {analysisReplay.gameMode==="1v1"?"1v1":"4 PLAYER"}</p></div><div className="refOverlayMetric"><span>MOVE</span><b>{analysisIndex+1} / {replayMoves.length}</b></div></div>
-      <div className="analysisReplaySummary"><div><span>GAME ACCURACY</span><b>{replayOverallAccuracy==null?"—":replayOverallAccuracy+"%"}</b><small>Human {replayHumanAccuracy==null?"—":replayHumanAccuracy+"%"} · Bots {replayBotAccuracy==null?"—":replayBotAccuracy+"%"}</small></div>{replayBreakdown.map(c=><div className={"analysisSummaryChip class-"+c.key} key={c.key}><span>{c.icon}</span><b>{c.count}</b><small>{c.label}</small></div>)}</div>
-      <div className="analysisReplayToolbar"><button className="refGhostButton" onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(i=>Math.max(0,i-1))}} disabled={analysisIndex<=0}>← PREVIOUS MOVE</button><button className="refPrimaryButton replayPlayButton" onClick={()=>{if(analysisIndex>=replayMoves.length-1)setAnalysisIndex(0);setAnalysisPlaying(v=>!v)}} disabled={replayMoves.length<2}>{analysisPlaying?"Ⅱ PAUSE":"▶ REPLAY"}</button><span>Turn {replayMove?.turn||"—"} · {replayMove?.isBot?"BOT":"HUMAN"} · {replayMove?.playerName||"—"} · {replayMove?.classification?.label||"—"}</span><input className="analysisReplayScrubber" type="range" min="0" max={Math.max(0,replayMoves.length-1)} value={Math.min(analysisIndex,Math.max(0,replayMoves.length-1))} onChange={e=>{setAnalysisPlaying(false);setAnalysisIndex(Number(e.target.value))}} aria-label="Replay move timeline"/><button className="refGhostButton" onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(i=>Math.min(replayMoves.length-1,i+1))}} disabled={analysisIndex>=replayMoves.length-1}>NEXT MOVE →</button></div>
-      {replayMove&&<div className="analysisReplayGrid"><section className="analysisReplayBoard"><Board geo={geo} board={replayMove.after?.board||replayMove.stateAfter?.board||analysisReplay.board} players={replayMove.after?.players||replayMove.stateAfter?.players||analysisReplay.players} ports={replayMove.after?.ports||replayMove.stateAfter?.ports||analysisReplay.ports||[]} selectedV={null} selectedE={null} analysisMode={false}/></section><aside className="analysisReplaySide"><section className="replayMoveCard"><div className={"classificationBadge classification-"+(replayMove.classification?.key||"good")}>{replayMove.classification?.icon||"🟢"} {replayMove.classification?.label||"GOOD"}</div><h3>{replayMove.action||"Move"}</h3><p>{replayMove.recommended?("Engine line: "+replayMove.recommended):"Recorded move from the completed match."}</p>{replayMove.engineLoss!=null&&<div className="probDelta"><span>ENGINE LOSS</span><b>{(replayMove.engineLoss*100).toFixed(1)}%</b></div>}{replayMove.delta!=null&&<div className="probDelta"><span>MODELED WIN-LIKELIHOOD SHIFT</span><b>{(Number(replayMove.delta)*100>=0?"+":"")+(Number(replayMove.delta)*100).toFixed(1)} pp</b></div>}</section><section className="replayCommentCard"><div className="refPanelTitle">MOVE COMMENTARY</div><p>{replayMove.comment||"The engine has no commentary for this move yet."}</p></section><section className="replayOddsCard"><div className="refPanelTitle">POSITION ODDS AFTER MOVE</div>{(replayMove.afterOdds||[]).map(o=><div className="engineOddsRow" key={o.id}><span>{o.name}</span><b>{(o.prob*100).toFixed(1)}%</b></div>)}</section><section className="replayMoveList"><div className="refPanelTitle">MOVE DETAILS</div><div className="replayActionLine"><span>•</span><div><b>{replayMove.isBot?"BOT MOVE":"HUMAN MOVE"}</b><small>{replayMove.match?"Matched the engine line.":"Different from the engine top line; classified from engine loss."}</small></div></div><div className="replayActionLine"><span>↗</span><div><b>RATING SCALE</b><small>Brilliant → Excellent → Good → Inaccuracy → Mistake → Blunder. The label is derived from the engine's modeled equity loss for this move.</small></div></div></section></aside></div>}
-    </div></div>
+    <div className="refOverlay historyAnalyzeOverlay">
+      <div className="refOverlayCard refHistoryAnalyzeCard analysisReplayShell">
+        <button className="refClose" onClick={closeOverlay}>×</button>
+        <div className="refOverlayHead">
+          <div><span className="eyebrow">CATAN ENGINE · MOVE REVIEW</span><h2>GAME ANALYZER</h2><p>{analysisReplay.result==="draw"?"DRAW":(analysisReplay.winner||"GAME COMPLETE")} · {fmtDate(analysisReplay.date)} · {fmtDuration(analysisReplay.durationSeconds)} · {analysisReplay.gameMode==="1v1"?"1v1":"4 PLAYER"}</p></div>
+          <div className="refOverlayMetric"><span>MOVE</span><b>{analysisIndex+1} / {replayMoves.length}</b></div>
+        </div>
+
+        <div className="analysisReplaySummary">
+          <div><span>GAME ACCURACY</span><b>{replayOverallAccuracy==null?"—":replayOverallAccuracy+"%"}</b><small>Human {replayHumanAccuracy==null?"—":replayHumanAccuracy+"%"} · Bots {replayBotAccuracy==null?"—":replayBotAccuracy+"%"}</small></div>
+          {replayBreakdown.map(c=><div className={"analysisSummaryChip class-"+c.key} key={c.key}><span>{c.icon}</span><b>{c.count}</b><small>{c.label}</small></div>)}
+        </div>
+
+        <div className="analysisReplayControlsCard">
+          <div className="analysisReplayToolbar">
+            <button className="refGhostButton" onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(i=>Math.max(0,i-1))}} disabled={analysisIndex<=0}>← PREVIOUS</button>
+            <button className="refPrimaryButton replayPlayButton" onClick={()=>{if(analysisIndex>=replayMoves.length-1)setAnalysisIndex(0);setAnalysisPlaying(v=>!v)}} disabled={replayMoves.length<2}>{analysisPlaying?"Ⅱ PAUSE":"▶ REPLAY"}</button>
+            <button className="refGhostButton" onClick={()=>{setAnalysisPlaying(false);setAnalysisShowAlternative(v=>!v)}} disabled={!replayAlternativeState}>{analysisShowAlternative?"VIEW ACTUAL":"SHOW ALTERNATIVE"}</button>
+            <span className="replayTurnLabel">TURN {replayMove?.turn||"—"} · {replayMove?.isBot?"BOT":"HUMAN"} · {replayMove?.playerName||"—"} · {replayMove?.classification?.label||"—"}</span>
+            <input className="analysisReplayScrubber" type="range" min="0" max={Math.max(0,replayMoves.length-1)} value={Math.min(analysisIndex,Math.max(0,replayMoves.length-1))} onChange={e=>{setAnalysisPlaying(false);setAnalysisIndex(Number(e.target.value))}} aria-label="Replay move timeline"/>
+            <button className="refGhostButton" onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(i=>Math.min(replayMoves.length-1,i+1))}} disabled={analysisIndex>=replayMoves.length-1}>NEXT →</button>
+          </div>
+          <div className="analysisReplaySettings">
+            <div className="analysisSpeedGroup"><span>SPEED</span>{[.5,1,2,4].map(v=><button key={v} className={Number(analysisSpeed)===v?"selected":""} onClick={()=>setAnalysisSpeed(v)}>{v}×</button>)}</div>
+            <label className="analysisPauseToggle"><input type="checkbox" checked={analysisPauseOnError} onChange={e=>setAnalysisPauseOnError(e.target.checked)}/> Pause on inaccuracy / mistake / blunder</label>
+            <div className="analysisPerspectiveGroup"><span>PERSPECTIVE</span><button className={analysisPerspectiveId==="all"?"selected":""} onClick={()=>setAnalysisPerspectiveId("all")}>ALL</button>{(analysisReplay.players||[]).map(p=><button key={p.id} className={String(analysisPerspectiveId)===String(p.id)?"selected":""} onClick={()=>setAnalysisPerspectiveId(p.id)}>{p.name}</button>)}</div>
+          </div>
+        </div>
+
+        <section className="analysisTimelineCard">
+          <div className="refPanelTitle">MOVE TIMELINE <span>CLICK A MARKER TO JUMP</span></div>
+          <div className="analysisTimelineTrack">
+            {replayMoves.map((m,i)=><button key={i} aria-label={"Move "+(i+1)+" "+(m.classification?.label||"")} title={"T"+m.turn+" · "+(m.playerName||"")+" · "+(m.classification?.label||"")} className={"analysisTimelineMarker "+(m.classification?.key||"good")+" "+(i===analysisIndex?"active":"")} onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(i)}}><span>{i+1}</span></button>)}
+          </div>
+        </section>
+
+        {replayMove&&<div className="analysisReplayGrid">
+          <section className="analysisReplayBoardColumn">
+            <section className="analysisReplayBoard">
+              <div className="analysisBoardModeBanner"><b>{analysisShowAlternative?"ENGINE ALTERNATIVE":"RECORDED MOVE"}</b><span>{analysisShowAlternative&&replayAlternativeMove?engineActionText(replayAlternativeMove,analysisReplay.players||[]):replayMove.action||"Move"}</span></div>
+              <Board geo={geo} board={replayVisibleState?.board||analysisReplay.board} players={replayVisibleState?.players||analysisReplay.players} ports={replayVisibleState?.ports||analysisReplay.ports||[]} selectedV={replayAction.type==="settlement"||replayAction.type==="city"?replayAction.spot:null} selectedE={replayAction.type==="road"?replayAction.spot:null} analysisMode={true}/>
+              <div className="analysisBoardLegend"><span>Board shows the position after the selected move.</span>{replayAlternativeState&&<b>{analysisShowAlternative?"Alternative state from engine candidate":"Alternative available"}</b>}</div>
+            </section>
+            <section className="replayWhatChangedCard">
+              <div className="refPanelTitle">WHAT CHANGED?</div>
+              <div className="replayChangedGrid">
+                <div><span>MODELED ODDS</span><b>{replayChanged?(replayChanged.odds*100>=0?"+":"")+(replayChanged.odds*100).toFixed(1)+" pp":"—"}</b></div>
+                <div><span>VISIBLE VP</span><b>{replayChanged?(replayChanged.vp>=0?"+":"")+replayChanged.vp:"—"}</b></div>
+                <div><span>HAND SIZE</span><b>{replayChanged?(replayChanged.hand>=0?"+":"")+replayChanged.hand:"—"}</b></div>
+                <div><span>PRODUCTION</span><b>{replayChanged?(replayChanged.production>=0?"+":"")+replayChanged.production.toFixed(1):"—"}</b></div>
+              </div>
+              <p>{analysisShowAlternative?"You are viewing the engine alternative branch. Switch back to compare it against the actual game move.":replayMove?.comment||"The engine compares the saved before/after position."}</p>
+            </section>
+          </section>
+
+          <aside className="analysisReplaySide">
+            <section className={"replayMoveCard classification-"+(replayMove.classification?.key||"good")}>
+              <div className="classificationBadge">{replayMove.classification?.icon||"🟢"} {replayMove.classification?.label||"GOOD"}</div>
+              <div className="replaySeverityRow"><b>{replaySeverity?.label||"NEGLIGIBLE"}</b><span>{replaySeverity?.text||""}</span></div>
+              <h3>{replayMove.action||"Move"}</h3>
+              <p>{replayMove.recommended?("Engine line: "+replayMove.recommended):"Recorded move from the completed match."}</p>
+              <div className="replayMetricGrid"><div><span>ENGINE LOSS</span><b>{replayMove.engineLoss!=null?(replayMove.engineLoss*100).toFixed(1)+"%":"—"}</b></div><div><span>WIN-LIKELIHOOD SHIFT</span><b>{replayMove.delta!=null?((Number(replayMove.delta)*100>=0?"+":"")+(Number(replayMove.delta)*100).toFixed(1)+" pp"):"—"}</b></div></div>
+              <div className="replayActionButtons"><button className="refPrimaryButton" disabled={!replayAlternativeState} onClick={()=>setAnalysisShowAlternative(v=>!v)}>{analysisShowAlternative?"BACK TO RECORDED":"SHOW RECOMMENDED MOVE"}</button><button className="refGhostButton" onClick={()=>practiceReplayPosition(replayMove)}>PRACTICE THIS POSITION</button></div>
+            </section>
+
+            <section className="replayCommentCard">
+              <div className="refPanelTitle">MOVE COMMENTARY</div>
+              <p>{replayMove.comment||"The engine has no commentary for this move yet."}</p>
+            </section>
+
+            <section className="replayWhyCard">
+              <div className="refPanelTitle">WHY THIS MOVE?</div>
+              <div className="replayWhyGrid">{replayWhyRows.length?replayWhyRows.slice(0,10).map((row,i)=><div key={i}><span>{row.label}</span><b className={"tone-"+(row.tone||"flat")}>{row.value}</b></div>):<p>No factor breakdown was saved for this move type.</p>}</div>
+              {replayMove&&<small className="replayCategoryTag">{ANALYSIS_CATEGORY_META[replayStrategicCategory(replayMove)]||"POSITIONAL"} · {replayMove.isBot?"AI decision":"human decision"}</small>}
+            </section>
+
+            <section className="replayOddsCard"><div className="refPanelTitle">POSITION ODDS</div>{(replayMove.afterOdds||[]).map(o=><div className="engineOddsRow" key={o.id}><span>{o.name}</span><b>{(o.prob*100).toFixed(1)}%</b></div>)}</section>
+
+            {replayOpeningRanking.length>0&&<section className="replayOpeningCard">
+              <div className="refPanelTitle">OPENING PLACEMENT RANKING</div>
+              <p>Engine-ranked legal intersections for this settlement position. Select a row to highlight the spot.</p>
+              <div className="replayPlacementRows">{replayOpeningRanking.map((x,i)=><button key={x.v} className={x.v===replayAction.spot?"chosen":""} onClick={()=>{setAnalysisShowAlternative(false)}}><span>#{i+1}</span><b>Intersection {x.v}</b><strong>{Number(x.score).toFixed(1)}</strong></button>)}</div>
+            </section>}
+
+            <section className="replayMoveList">
+              <div className="refPanelTitle">MOVE DETAILS</div>
+              <div className="replayActionLine"><span>•</span><div><b>{replayMove.isBot?"BOT MOVE":"HUMAN MOVE"}</b><small>{replayMove.match?"Matched the engine line.":"Different from the engine top line; classified from engine loss."}</small></div></div>
+              <div className="replayActionLine"><span>↗</span><div><b>RATING SCALE</b><small>Brilliant → Excellent → Good → Inaccuracy → Mistake → Blunder. The label is derived from modeled engine loss.</small></div></div>
+            </section>
+          </aside>
+        </div>}
+
+        <section className="analysisReportGrid">
+          <section className="analysisFinalReportCard">
+            <div className="refPanelTitle">FINAL GAME REPORT</div>
+            <p className="analysisStoryText">{replayStory}</p>
+            <div className="analysisGraphWrap">
+              <div className="analysisGraphHeader"><span>{replayPerspectivePlayer?.name||"Player"} modeled win likelihood</span><b>{analysisPerspectiveId==="all"?"ALL PLAYER DATA": "FILTERED VIEW"}</b></div>
+              <svg className="analysisWinGraph" viewBox={"0 0 "+replayGraphWidth+" "+replayGraphHeight} role="img" aria-label="Modeled win likelihood over replay moves">
+                <line className="analysisGraphGuide" x1={replayGraphPad} x2={replayGraphWidth-replayGraphPad} y1={replayGraphHeight/2} y2={replayGraphHeight/2}/>
+                <polyline className="analysisGraphLine" fill="none" points={replayGraphPolyline}/>
+                {replayGraphPoints.slice(0,120).map(p=><circle key={p.i} className={"analysisGraphPoint "+(p.move?.classification?.key||"good")} cx={p.x} cy={p.y} r={p.i===analysisIndex?4.2:2.6} onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(p.i)}}/> )}
+              </svg>
+              <div className="analysisGraphScale"><span>0%</span><span>50%</span><span>100%</span></div>
+            </div>
+          </section>
+
+          <section className="analysisCoachCard">
+            <div className="refPanelTitle">AI COACH</div>
+            <div className="analysisCoachList">{replayCoach.length?replayCoach.map((p,i)=><div key={i}><b>{i+1}</b><p>{p}</p></div>):<p>Not enough analyzed moves for coaching yet.</p>}</div>
+            <div className="analysisCoachFooter"><span>Focus on patterns you can repeat, not just the single lowest-rated move.</span></div>
+          </section>
+        </section>
+
+        <section className="analysisCriticalCard">
+          <div className="refPanelTitle">CRITICAL MOMENTS <span>{replayCritical.length} selected</span></div>
+          <div className="analysisCriticalGrid">{replayCritical.map((m,i)=><button key={i} className={"analysisCriticalItem "+(m.classification?.key||"good")} onClick={()=>{setAnalysisPlaying(false);setAnalysisIndex(m._index)}}><div><b>T{m.turn}</b><span>{m.playerName||"Player"}</span></div><strong>{m.classification?.icon||"🟢"} {m.classification?.label||"GOOD"}</strong><small>{m.severity?.label||"NEGLIGIBLE"} · {Number(m.equityLossPct||0).toFixed(1)}% engine loss</small></button>)}</div>
+        </section>
+
+        <section className="analysisPlayerTableCard">
+          <div className="refPanelTitle">PLAYER ACCURACY & STRATEGIC PROFILE</div>
+          <div className="analysisPlayerTable">{(analysisReplay.players||[]).map(p=>{
+            const pm=replayMoves.filter(m=>String(m.playerId)===String(p.id));
+            const acc=analysisAccuracy(pm);
+            const errs=pm.filter(m=>ANALYSIS_ERROR_KEYS.has(m.classification?.key)).length;
+            const categories=[...new Set(pm.map(replayStrategicCategory))].slice(0,4).map(k=>ANALYSIS_CATEGORY_META[k]||k).join(" · ");
+            return <button key={p.id} className={"analysisPlayerRow "+(String(analysisPerspectiveId)===String(p.id)?"selected":"")} onClick={()=>setAnalysisPerspectiveId(p.id)}><span className="analysisPlayerIdentity"><b>{p.name}</b><small>{p.bot?"BOT":"HUMAN"}</small></span><span><b>{acc==null?"—":acc+"%"}</b><small>accuracy</small></span><span><b>{pm.length}</b><small>moves</small></span><span><b>{errs}</b><small>review flags</small></span><em>{categories||"—"}</em></button>;
+          })}</div>
+        </section>
+
+        <section className="analysisGameStoryCard">
+          <div><div className="refPanelTitle">GAME STORY</div><p>{replayStory}</p></div>
+          <div className="analysisRatingLegend">{ANALYSIS_CLASSIFICATIONS.map(c=><span key={c.key} className={c.key}><b>{c.icon}</b>{c.label}</span>)}</div>
+        </section>
+      </div>
+    </div>
   ):null;
   const history_analyze_render = analysisUnavailableBlock || history_analyze_block;
   const advanced_ai_block=tab==="advanced"?(

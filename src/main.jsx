@@ -1891,7 +1891,7 @@ function App(){
   const [pvOpeningPlan,setPvOpeningPlan]=useState(null);
   const [mapSettings,setMapSettings]=useState({highPipsTouch:false});
   const [board,setBoard]=useState(null),[ports,setPorts]=useState([]),[deck,setDeck]=useState([]),[players,setPlayers]=useState([]),[turn,setTurn]=useState(0),[setupRound,setSetupRound]=useState(1),[setupOrder,setSetupOrder]=useState([]),[setupIndex,setSetupIndex]=useState(0);
-  const [drawn,setDrawn] = useState(false),[turnSecondsLeft,setTurnSecondsLeft]=useState(TURN_BASE_SECONDS),[drawOffer,setDrawOffer]=useState(null),[roll,setRoll]=useState(null),[dice,setDice]=useState(null),[lastBotRoll,setLastBotRoll]=useState(null),[hasRolled,setHasRolled]=useState(false),[bank,setBank]=useState(()=>emptyBank()),[selectedV,setSelectedV]=useState(null),[selectedE,setSelectedE]=useState(null),[tab,setTab]=useState("game"),[analysisMode,setAnalysisMode]=useState(false),[devOpen,setDevOpen]=useState(false),[devChoice,setDevChoice]=useState(null),[winner,setWinner]=useState(null),[log,setLog]=useState([]),[history,setHistory]=useState(loadHistory),[reviewGame,setReviewGame]=useState(null),[gameStarted,setGameStarted]=useState(Date.now()),[decisions,setDecisions]=useState([]),[trade,setTrade]=useState({give:"wood",get:"wheat"}),[playerTrade,setPlayerTrade]=useState({partner:1,giveBundle:empty(),getBundle:empty()}),[tradeOffer,setTradeOffer]=useState(null),[devBought,setDevBought]=useState(false),[devCardsBought,setDevCardsBought]=useState({}),[devPlayed,setDevPlayed]=useState(false),[robberMode,setRobberMode]=useState(false),[discardState,setDiscardState]=useState(null),[discardSelection,setDiscardSelection]=useState(empty()),[robberVictim,setRobberVictim]=useState(null),[heldAwards,setHeldAwards]=useState({roadOwner:null,armyOwner:null}),[quickPanel,setQuickPanel]=useState(null),[turnNumber,setTurnNumber]=useState(1),[lastTurnSummary,setLastTurnSummary]=useState(""),[theme,setTheme]=useState(()=>{try{return (localStorage.getItem(THEME_KEY)??localStorage.getItem(LEGACY_THEME_KEY))||"Cyan"}catch{return"Cyan"}}),[analysisReplay,setAnalysisReplay]=useState(null),[analysisIndex,setAnalysisIndex]=useState(0),[musicEnabled,setMusicEnabled]=useState(()=>{try{return (localStorage.getItem(MUSIC_KEY)??localStorage.getItem(LEGACY_MUSIC_KEY))!=="off"}catch{return true}}),[actionConfirm,setActionConfirm]=useState(null),[duelNotice,setDuelNotice]=useState(null),[sidePanel,setSidePanel]=useState("activity"),[chatInput,setChatInput]=useState(""),[chatMessages,setChatMessages]=useState([]),[chatUnread,setChatUnread]=useState(0),[tradeHubTab,setTradeHubTab]=useState("bank"),[rulesOpen,setRulesOpen]=useState(false),[engineTargetVP,setEngineTargetVP]=useState(10),[engineHeldAwards,setEngineHeldAwards]=useState({roadOwner:null,armyOwner:null}),[engineSelectedPiece,setEngineSelectedPiece]=useState(null),[engineDevCounts,setEngineDevCounts]=useState(()=>({...DEV})),[lastPrivateDevDraw,setLastPrivateDevDraw]=useState(null);
+  const [drawn,setDrawn] = useState(false),[turnSecondsLeft,setTurnSecondsLeft]=useState(TURN_BASE_SECONDS),[drawOffer,setDrawOffer]=useState(null),[roll,setRoll]=useState(null),[dice,setDice]=useState(null),[lastBotRoll,setLastBotRoll]=useState(null),[hasRolled,setHasRolled]=useState(false),[bank,setBank]=useState(()=>emptyBank()),[selectedV,setSelectedV]=useState(null),[selectedE,setSelectedE]=useState(null),[placementConfirm,setPlacementConfirm]=useState(null),[tab,setTab]=useState("game"),[analysisMode,setAnalysisMode]=useState(false),[devOpen,setDevOpen]=useState(false),[devChoice,setDevChoice]=useState(null),[winner,setWinner]=useState(null),[log,setLog]=useState([]),[history,setHistory]=useState(loadHistory),[reviewGame,setReviewGame]=useState(null),[gameStarted,setGameStarted]=useState(Date.now()),[decisions,setDecisions]=useState([]),[trade,setTrade]=useState({give:"wood",get:"wheat"}),[playerTrade,setPlayerTrade]=useState({partner:1,giveBundle:empty(),getBundle:empty()}),[tradeOffer,setTradeOffer]=useState(null),[devBought,setDevBought]=useState(false),[devCardsBought,setDevCardsBought]=useState({}),[devPlayed,setDevPlayed]=useState(false),[robberMode,setRobberMode]=useState(false),[discardState,setDiscardState]=useState(null),[discardSelection,setDiscardSelection]=useState(empty()),[robberVictim,setRobberVictim]=useState(null),[heldAwards,setHeldAwards]=useState({roadOwner:null,armyOwner:null}),[quickPanel,setQuickPanel]=useState(null),[turnNumber,setTurnNumber]=useState(1),[lastTurnSummary,setLastTurnSummary]=useState(""),[theme,setTheme]=useState(()=>{try{return (localStorage.getItem(THEME_KEY)??localStorage.getItem(LEGACY_THEME_KEY))||"Cyan"}catch{return"Cyan"}}),[analysisReplay,setAnalysisReplay]=useState(null),[analysisIndex,setAnalysisIndex]=useState(0),[musicEnabled,setMusicEnabled]=useState(()=>{try{return (localStorage.getItem(MUSIC_KEY)??localStorage.getItem(LEGACY_MUSIC_KEY))!=="off"}catch{return true}}),[actionConfirm,setActionConfirm]=useState(null),[duelNotice,setDuelNotice]=useState(null),[sidePanel,setSidePanel]=useState("activity"),[chatInput,setChatInput]=useState(""),[chatMessages,setChatMessages]=useState([]),[chatUnread,setChatUnread]=useState(0),[tradeHubTab,setTradeHubTab]=useState("bank"),[rulesOpen,setRulesOpen]=useState(false),[engineTargetVP,setEngineTargetVP]=useState(10),[engineHeldAwards,setEngineHeldAwards]=useState({roadOwner:null,armyOwner:null}),[engineSelectedPiece,setEngineSelectedPiece]=useState(null),[engineDevCounts,setEngineDevCounts]=useState(()=>({...DEV})),[lastPrivateDevDraw,setLastPrivateDevDraw]=useState(null);
   const decisionsRef=useRef([]);
   const logRef=useRef([]);
   const turnDeadlineRef=useRef(null);
@@ -2411,6 +2411,35 @@ function App(){
       return true;
     });
   }
+  function selectPlacementFromTile(tid,mode){
+    if(tid==null||!geo.tiles[tid])return false;
+    const tileVerts=geo.tiles[tid].vertices||[];
+    if(mode==="setup"){
+      const candidates=tileVerts.filter(v=>currentSetupPlayer&&!currentSetupPlayer.bot&&legalSettlement(v,players,geo));
+      if(candidates.length){const v=candidates[0];setSelectedV(v);setSelectedE(null);setPlacementConfirm({vertex:v,kind:"settlement",mode});return true;}
+      return false;
+    }
+    if(!active||active.bot||roll==null||roll===7)return false;
+    const cityCandidates=tileVerts.filter(v=>active.settlements?.includes(v)&&canPay(active.hand,COSTS.city)&&piecesRemaining(active).cities>0);
+    if(cityCandidates.length){const v=cityCandidates[0];setSelectedV(v);setPlacementConfirm({vertex:v,kind:"city",mode:"play"});return true;}
+    const settlementCandidates=tileVerts.filter(v=>legalSettlement(v,players,geo)&&settlementConnected(v,active,geo)&&canPay(active.hand,COSTS.settlement)&&piecesRemaining(active).settlements>0);
+    if(settlementCandidates.length){const v=settlementCandidates[0];setSelectedV(v);setPlacementConfirm({vertex:v,kind:"settlement",mode:"play"});return true;}
+    return false;
+  }
+  function confirmPlacementPreview(){
+    const preview=placementConfirm;
+    if(!preview||preview.vertex==null)return false;
+    const v=preview.vertex;
+    if(preview.kind==="city")return buildCity(v);
+    if(preview.mode==="setup"){
+      if(!currentSetupPlayer||currentSetupPlayer.bot||!legalSettlement(v,players,geo))return false;
+      setSelectedV(v);setSelectedE(null);setPlacementConfirm(null);
+      appendLog(currentSetupPlayer.name+" confirmed settlement placement at intersection "+v+". Now choose its connected road.");
+      extendTurnTimer();
+      return true;
+    }
+    return buildSettlement(v);
+  }
   function buildSettlement(v=selectedV){
     return runHumanAction(()=>{
       if(!active||active.bot||winner||drawn||v==null||!hasRolled||roll===7||robberMode||piecesRemaining(active).settlements<=0||!canPay(active.hand,COSTS.settlement)||!legalSettlement(v,players,geo)||!settlementConnected(v,active,geo)||screen!=="playing")return false;
@@ -2418,7 +2447,7 @@ function App(){
       setBank(b=>add(b,COSTS.settlement));
       update(active.id)(p=>({...p,hand:pay(p.hand,COSTS.settlement),settlements:[...p.settlements,v],vp:p.vp+1}));
       appendLog(`${active.name} built a settlement at intersection ${v}.`);
-      setSelectedV(null);extendTurnTimer();
+      setSelectedV(null);setPlacementConfirm(null);extendTurnTimer();
       return true;
     });
   }
@@ -2429,7 +2458,7 @@ function App(){
       setBank(b=>add(b,COSTS.city));
       update(active.id)(p=>({...p,hand:pay(p.hand,COSTS.city),settlements:p.settlements.filter(x=>x!==v),cities:[...p.cities,v],vp:p.vp+1}));
       appendLog(`${active.name} upgraded settlement ${v} to a city.`);
-      setSelectedV(null);extendTurnTimer();
+      setSelectedV(null);setPlacementConfirm(null);extendTurnTimer();
       return true;
     });
   }
@@ -3311,7 +3340,7 @@ function BoardDefs(){
   </defs>;
 }
 
-function Board({geo,board,players,ports,selectedV,selectedE,onVertex,onEdge,onTile,onInspectVertex,onInspectEdge,analysisMode,boardAnalysis=[],onRobber,robberActive,placementMode=null,placementPlayer=null,showPlacementScores=false}){
+function Board({geo,board,players,ports,selectedV,selectedE,onVertex,onEdge,onTile,onInspectVertex,onInspectEdge,analysisMode,boardAnalysis=[],onRobber,robberActive,placementMode=null,placementPlayer=null,showPlacementScores=false,placementConfirm=null,onPlacementConfirm}){
   const safeBoard=asArray(board);
   const safePlayers=asArray(players);
   const safePorts=asArray(ports);
@@ -3336,6 +3365,7 @@ function Board({geo,board,players,ports,selectedV,selectedE,onVertex,onEdge,onTi
     {safePorts.map(port=>{const a=geo.vertices[port.a],b=geo.vertices[port.b],mx=(a.x+b.x)/2,my=(a.y+b.y)/2;return <g key={`port-${port.edge}`} className="portEdgeBadge"><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="portLine"/><rect x={mx-19} y={my-10} width="38" height="20" rx="5"/><text x={mx} y={my+3.5}>{port.type}</text></g>})}
     {analysisMode&&geo.vertices.map((v,i)=>rank.has(i)?<g key={`a${i}`} className="analysisPin"><circle cx={v.x} cy={v.y} r="13"/><text x={v.x} y={v.y+5}>{rank.get(i)}</text></g>:null)}
     {geo.edges.map(e=>{const a=geo.vertices[e.a],b=geo.vertices[e.b],owner=safePlayers.find(p=>Array.isArray(p?.roads)&&p.roads.includes(e.id));return <g key={e.id} className={`roadGroup ${buildEdgeTargets.has(e.id)?"buildEdgeTargetGroup":""}`}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="roadHit" onClick={ev=>{ev.stopPropagation();onEdge?.(e.id)}}/>{buildEdgeTargets.has(e.id)&&<line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="roadBuildHint" pointerEvents="none"/>}<line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`road ${selectedE===e.id?"edgeSelected":""}`} stroke={owner?.color||"rgba(42,31,22,.22)"} pointerEvents="none"/></g>})}
+    {placementConfirm?.vertex!=null&&placementConfirm?.kind&&(()=>{const v=geo.vertices[placementConfirm.vertex];if(!v)return null;const isCity=placementConfirm.kind==="city";return <g className="placementConfirmGhost" transform={"translate("+v.x+" "+(v.y-30)+")"} onClick={e=>{e.stopPropagation();onPlacementConfirm?.()}} role="button" aria-label={"Confirm "+(isCity?"city":"settlement")+" placement"}><circle r="24" className="placementConfirmHalo"/><g className={isCity?"cityPiece3d":"settlementPiece3d"} style={{"--piece":placementPlayer?.color||"#00f6ff"}}>{isCity?<><ellipse cx="0" cy="13" rx="17" ry="5" className="pieceShadow"/><rect x="-15" y="-8" width="30" height="21" rx="2" className="cityBody"/><polygon points="-15,-8 -9,-16 0,-11 9,-16 15,-8" className="cityRoof"/><rect x="-14" y="-15" width="7" height="20" rx="1.5" className="cityTower"/><polygon points="-15,-15 -10,-21 -5,-15" className="cityTowerRoof"/><rect x="7" y="-15" width="7" height="20" rx="1.5" className="cityTower"/><polygon points="5,-15 10,-21 15,-15" className="cityTowerRoof"/><rect x="-3" y="-1" width="6" height="14" rx="1" className="cityDoor"/></>:<><ellipse cx="0" cy="11" rx="12" ry="4" className="pieceShadow"/><path d="M-10 -1 L-10 11 L10 11 L10 -1 Z" className="houseBody"/><polygon points="-12,0 0,-11 12,0 9,3 0,-5 -9,3" className="houseRoof"/><rect x="-3" y="3" width="6" height="8" rx="1" className="houseDoor"/></>}</g><text x="0" y="35" className="placementConfirmLabel">CLICK TO CONFIRM</text></g>})()}
     {geo.vertices.map((v,i)=>{const p=safePlayers.find(p=>Array.isArray(p?.settlements)&&Array.isArray(p?.cities)&&(p.settlements.includes(i)||p.cities.includes(i)));return <g key={i} className={`intersection ${buildVertexTargets.has(i)?"buildTargetGroup":""}`} onClick={e=>{e.stopPropagation();if(onInspectVertex)onInspectVertex(i);else onVertex?.(i)}}>{p?(p.cities.includes(i)?<g className="cityPiece3d" transform={`translate(${v.x} ${v.y})`} style={{"--piece":p.color}} aria-label={`${p.name} city`}><ellipse cx="0" cy="13" rx="17" ry="5" className="pieceShadow"/><rect x="-15" y="-8" width="30" height="21" rx="2" className="cityBody"/><polygon points="-15,-8 -9,-16 0,-11 9,-16 15,-8" className="cityRoof"/><rect x="-14" y="-15" width="7" height="20" rx="1.5" className="cityTower"/><polygon points="-15,-15 -10,-21 -5,-15" className="cityTowerRoof"/><rect x="7" y="-15" width="7" height="20" rx="1.5" className="cityTower"/><polygon points="5,-15 10,-21 15,-15" className="cityTowerRoof"/><rect x="-3" y="-1" width="6" height="14" rx="1" className="cityDoor"/><rect x="-12" y="-5" width="4" height="5" rx=".7" className="cityWindow"/><rect x="8" y="-5" width="4" height="5" rx=".7" className="cityWindow"/><path d="M-15 13 L15 13 L12 17 L-12 17 Z" className="cityBase"/></g>:<g className="settlementPiece3d" transform={`translate(${v.x} ${v.y})`} style={{"--piece":p.color}} aria-label={`${p.name} settlement`}><ellipse cx="0" cy="11" rx="12" ry="4" className="pieceShadow"/><path d="M-10 -1 L-10 11 L10 11 L10 -1 Z" className="houseBody"/><polygon points="-12,0 0,-11 12,0 9,3 0,-5 -9,3" className="houseRoof"/><polygon points="-10,0 -5,-4 -5,11 -10,11" className="houseSide"/><rect x="-3" y="3" width="6" height="8" rx="1" className="houseDoor"/><rect x="4" y="1" width="4" height="4" rx=".6" className="houseWindow"/><path d="M-10 11 L10 11 L8 14 L-8 14 Z" className="houseBase"/></g>):<circle cx={v.x} cy={v.y} r={selectedV===i?"8":"4.5"} className={`${selectedV===i?"emptyVertex selectedVertex":"emptyVertex"} ${buildVertexTargets.has(i)?"buildTarget":""}`}/>}
       {analysisMode&&rank.has(i)&&<text x={v.x} y={v.y-17} className="portRank">{rank.get(i)}</text>}
       {placementRanks.has(i)&&(()=>{const item=placementRanks.get(i),info=item.info;return <g className={`placementBadge ${item.rank===1?"top":""}`} transform={`translate(${v.x} ${v.y})`} pointerEvents="none"><circle r="12" className="placementHalo"/><rect x="-38" y="-43" width="76" height="30" rx="7" className="placementBadgeBox"/><text x="-32" y="-33" className="placementRank">#{item.rank} · {info.score} PTS</text><text x="-32" y="-24" className="placementCombo">{info.label}</text><text x="-32" y="-15" className="placementPpa">{info.pips.toFixed(0)} PIPS · {info.expected.toFixed(2)} PPA</text></g>})()}

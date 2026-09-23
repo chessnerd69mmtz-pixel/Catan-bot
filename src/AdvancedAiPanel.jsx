@@ -8,7 +8,8 @@ import {
   rankMonteCarloPlacements,
   heatmapForFrame,
   personalityForBot,
-  summarizeAiPerformance
+  summarizeAiPerformance,
+  benchmarkPersonalitiesOnPosition
 } from "./advanced-ai.mjs";
 import { makeAdvancedGeometry } from "./advanced-ai.mjs";
 
@@ -21,6 +22,8 @@ export default function AdvancedAiPanel({history = [], onClose, onOpenReplay, re
   const [mcRunning, setMcRunning] = useState(false);
   const [mcResults, setMcResults] = useState([]);
   const [heatmapData, setHeatmapData] = useState(null);
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const [benchmarkResults, setBenchmarkResults] = useState([]);
 
   const games = useMemo(() => history.filter(g => g?.result && Array.isArray(g?.players)), [history]);
   const selectedGame = games.find(g => String(g.gameId || g.id) === String(selectedGameId)) || games[0] || null;
@@ -45,6 +48,28 @@ export default function AdvancedAiPanel({history = [], onClose, onOpenReplay, re
     const enrichedFrame = {...frame, geo};
     const data = heatmapForFrame(enrichedFrame, personalityForBot(selectedBot).id);
     setHeatmapData(data);
+  };
+
+  const runBenchmark = () => {
+    if (!selectedGame?.board?.length || !selectedGame?.players?.length) return;
+    const geo = makeAdvancedGeometry();
+    setBenchmarkRunning(true);
+    setBenchmarkResults([]);
+    window.setTimeout(() => {
+      try {
+        setBenchmarkResults(benchmarkPersonalitiesOnPosition({
+          board: selectedGame.board,
+          players: selectedGame.players,
+          geo,
+          ports: selectedGame.ports || [],
+          targetCount: 5,
+          turns: 14,
+          samples: 30
+        }));
+      } finally {
+        setBenchmarkRunning(false);
+      }
+    }, 40);
   };
 
   const runMonteCarlo = () => {
@@ -105,6 +130,15 @@ export default function AdvancedAiPanel({history = [], onClose, onOpenReplay, re
       <section className="advancedAiSection personalitySection">
         <div className="advancedAiSectionHead"><div><span className="eyebrow">PLAYSTYLE PROFILES</span><h3>BOT PERSONALITIES</h3></div></div>
         <div className="advancedAiPersonalityGrid">{personalities.map(p => <article className="advancedAiPersonality" key={p.id} data-accent={p.accent}><div className="advancedAiBotIcon">🤖</div><div><b>{p.name}</b><h4>{p.title}</h4><p>{p.description}</p><div className="advancedAiPriorityRow">{p.priorities.map(x => <span key={x}>{x}</span>)}</div></div></article>)}</div>
+      </section>
+
+      <section className="advancedAiSection benchmarkSection">
+        <div className="advancedAiSectionHead">
+          <div><span className="eyebrow">COMPARISON LAB</span><h3>AI DECISION BENCHMARK</h3></div>
+          <button className="refPrimaryButton" onClick={runBenchmark} disabled={!selectedGame || benchmarkRunning}>{benchmarkRunning ? "BENCHMARKING…" : "COMPARE ALL 5 PERSONALITIES"}</button>
+        </div>
+        <p className="advancedAiDescription">Runs the same bounded placement search against the selected saved position for every personality. This is a decision benchmark only — no tournament, bracket, or ranked AI league is created.</p>
+        <div className="advancedAiBenchmarkGrid">{benchmarkResults.length ? benchmarkResults.map((r,i)=><article className={"advancedAiBenchmarkRow "+(i===0?"top":"")} key={r.personality}><span>#{i+1}</span><div><b>{r.name}</b><small>{r.title} · {r.candidates} candidates · top intersection {r.topVertex==null?"—":r.topVertex}</small></div><strong>{r.topMean==null?"—":fmt(r.topMean)}</strong><em>avg {r.averageMean==null?"—":fmt(r.averageMean)}</em></article>) : <div className="advancedAiEmpty">Select a completed game and compare all five personalities on the same board.</div>}</div>
       </section>
 
       <div className="advancedAiGrid">

@@ -489,7 +489,7 @@ function strategicTradeCandidates(p,players,board,geo,ports,bank,targetVP){
   ];
   const readiness=(hand,cost)=>Object.entries(cost).reduce((n,[r,c])=>n+Math.max(0,c-(hand?.[r]||0)),0);
   const beforeBest=Math.min(...buildTargets.map(x=>readiness(p.hand,x.cost)));
-  const missing=RES.slice().sort((a,b)=>(selfNeed[b]||0)-(selfNeed[a]||0));
+  const objectiveMissing=RES.filter(r=>buildTargets.some(x=>(x.cost?.[r]||0)>(p.hand?.[r]||0)));\n  const missing=RES.slice().sort((a,b)=>((objectiveMissing.includes(b)?1000:0)+(selfNeed[b]||0))-((objectiveMissing.includes(a)?1000:0)+(selfNeed[a]||0)));
   const surplus=RES.slice().sort((a,b)=>((p.hand?.[b]||0)-(prod[b]||0))-((p.hand?.[a]||0)-(prod[a]||0)));
   for(const partner of players.filter(x=>x.id!==p.id)){
     if(!partner?.hand)continue;
@@ -505,7 +505,7 @@ function strategicTradeCandidates(p,players,board,geo,ports,bank,targetVP){
           const afterHand=add(pay(p.hand,offer.giveBundle),offer.getBundle);
           const afterBest=Math.min(...buildTargets.map(x=>readiness(afterHand,x.cost)));
           const immediate=(beforeBest-afterBest)*2.8+(selfNeed[get]||0)-(selfNeed[give]||0)*.35;
-          if(afterBest<beforeBest || immediate>.35)out.push({...offer,tradeObjective:get,tradeObjectiveGain:immediate});
+          if(objectiveMissing.includes(get) || afterBest<beforeBest || immediate>.35)out.push({...offer,tradeObjective:get,tradeObjectiveGain:immediate+(objectiveMissing.includes(get)?1.25:0)});
         }
       }
     }

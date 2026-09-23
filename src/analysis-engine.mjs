@@ -224,7 +224,10 @@ function candidateMoves(state,playerId){
   const out=[];
   if(canPay(p.hand,COSTS.city))(p.settlements||[]).forEach(spot=>out.push({type:"city",spot,playerId}));
   if(canPay(p.hand,COSTS.road))(state.geo.edges||[]).forEach(e=>{if(legalRoad(e.id,p,state))out.push({type:"road",spot:e.id,playerId});});
-  if(canPay(p.hand,COSTS.settlement))for(let v=0;v<(state.geo.vertices||[]).length;v++)if(legalSettlement(v,state.players,state.geo)&&networkedVertex(v,p,state.geo))out.push({type:"settlement",spot:v,playerId});
+  if(canPay(p.hand,COSTS.settlement)){
+    const opening=(p.settlements||[]).length===0&&(p.cities||[]).length===0&&(p.roads||[]).length===0;
+    for(let v=0;v<(state.geo.vertices||[]).length;v++)if(legalSettlement(v,state.players,state.geo)&&(opening||networkedVertex(v,p,state.geo)))out.push({type:"settlement",spot:v,playerId});
+  }
   if(canPay(p.hand,COSTS.development)&&(state.deckCount||0)>0)out.push({type:"buyDev",playerId});
   if((p.development&&p.development.Knight||0)>0)out.push({type:"play",card:"Knight",playerId});
   return out.slice(0,48);
@@ -287,6 +290,72 @@ export function applyAnalysisMove(state,move,geoOverride=null){
   const base=clone(state||{});
   base.geo=geoOverride||base.geo;
   return applyApproximateAction(base,{...(move||{}),playerId:move?.playerId});
+}
+
+export function actionDecisionKey(action){
+  if(!action)return "none";
+  if(["settlement","road","city"].includes(action.type))return action.type+":"+action.spot;
+  if(action.type==="trade")return "trade:"+action.give+":"+action.get+":"+action.rate;
+  if(action.type==="playerTrade")return "playerTrade:"+action.partner+":"+JSON.stringify(action.giveBundle||{})+":"+JSON.stringify(action.getBundle||{});
+  if(action.type==="play")return "play:"+action.card;
+  if(action.type==="buyDev")return "buyDev";
+  return action.type;
+}
+
+export function benchmarkCandidateAgainstBest(state,candidate,options={}){
+  if(!state||!candidate?.type||candidate.playerId==null)return{ok:false,accepted:false,reason:"Missing position or candidate move."};
+  const playerId=candidate.playerId;
+  const legal=options.generateLegalMoves?options.generateLegalMoves(state,playerId):candidateMoves(state,playerId);
+  const legalCandidate=legal.find(m=>actionDecisionKey(m)===actionDecisionKey(candidate));
+  if(!legalCandidate)return{ok:false,accepted:false,reason:"The suggested move is not legal in this position."};
+  const horizon=Number(options.horizon||6);
+  const samples=Math.max(32,Number(options.samples||64));
+  const rngSeed=Number(options.seed||20260923);
+  const seeded=(seed)=>{let s=(seed>>>0)||1;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;}};
+  const rolloutOnce=(move,seed)=>{
+    const rng=seeded(seed);
+    const next=applyApproximateAction(state,move);
+    if(!next)return null;
+    const sim=rollout(next,playerId,horizon,rng);
+    return evaluateState(sim)[playerId]||0;
+  };
+  const ranked=[];
+  for(const move of legal){
+    if(actionDecisionKey(move)===actionDecisionKey(candidate))continue;
+    let total=0,n=0;
+    for(let i=0;i<Math.min(24,samples);i++){const v=rolloutOnce(move,rngSeed+i*7919);if(v!=null){total+=v;n++;}}
+    if(n)ranked.push({move,mean:total/n});
+  }
+  ranked.sort((a,b)=>b.mean-a.mean);
+  const best=ranked[0]?.move||legal.filter(m=>actionDecisionKey(m)!==actionDecisionKey(candidate))[0]||null;
+  if(!best)return{ok:true,accepted:false,reason:"No distinct baseline move was available.",samples:0};
+  const diffs=[];
+  for(let i=0;i<samples;i++){
+    const seed=rngSeed+i*7919;
+    const suggested=rolloutOnce(legalCandidate,seed);
+    const baseline=rolloutOnce(best,seed);
+    if(suggested!=null&&baseline!=null)diffs.push(suggested-baseline);
+  }
+  const mean=diffs.length?diffs.reduce((a,b)=>a+b,0)/diffs.length:0;
+  const variance=diffs.length>1?diffs.reduce((a,b)=>a+(b-mean)**2,0)/(diffs.length-1):0;
+  const sd=Math.sqrt(Math.max(0,variance));
+  const se=sd/Math.sqrt(Math.max(1,diffs.length));
+  const z=1.96;
+  const lower=mean-z*se;
+  const upper=mean+z*se;
+  const required=Math.max(.01,Number(options.minImprovement||0.01));
+  const accepted=diffs.length>=32&&mean>=required&&lower>0;
+  return{
+    ok:true,accepted,
+    candidate:legalCandidate,bestMove:best,
+    meanImprovement:mean,improvementPct:mean*100,
+    confidenceLower:lower,confidenceUpper:upper,
+    standardError:se,samples:diffs.length,horizon,
+    statisticallyBetter:lower>0,
+    reason:accepted
+      ? "Suggested move is mathematically superior to the current best move at the requested confidence gate."
+      : "The suggested move did not clear the mathematical improvement and confidence gate."
+  };
 }
 
 export function classifyMove({move,before,after,bestAfter,gameWinning=false}){

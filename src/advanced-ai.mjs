@@ -248,11 +248,12 @@ export function applyEloGame(game, store = defaultEloStore(), options = {}) {
     const winnerId = game.winnerId;
     players.forEach(p => { scores[p.id] = p.id === winnerId ? 1 : 0; });
   }
+  const baseRatings = Object.fromEntries(players.map(p => [p.eloKey, next.profiles[p.eloKey].rating]));
 
   players.forEach(p => {
     const opponents = players.filter(o => o.id !== p.id);
-    const actual = opponents.reduce((sum, o) => sum + scores[p.id], 0) / Math.max(1, opponents.length);
-    const avgExpected = opponents.reduce((sum, o) => sum + expected(next.profiles[p.eloKey].rating, next.profiles[o.eloKey].rating), 0) / Math.max(1, opponents.length);
+    const actual = opponents.reduce((sum) => sum + scores[p.id], 0) / Math.max(1, opponents.length);
+    const avgExpected = opponents.reduce((sum, o) => sum + expected(baseRatings[p.eloKey], baseRatings[o.eloKey]), 0) / Math.max(1, opponents.length);
     const delta = Math.round(k * (actual - avgExpected));
     const profile = next.profiles[p.eloKey];
     profile.rating += delta;
@@ -423,6 +424,36 @@ export function heatmapForFrame(frame, personalityId = null) {
     };
   }).sort((a,b) => b.score - a.score);
   return {scores, chosenVertex: chosen, player, board, players, ports, geo, personality};
+}
+
+export function benchmarkPersonalitiesOnPosition({board, players, geo, ports = [], targetCount = 5, turns = 14, samples = 36} = {}) {
+  if (!board?.length || !geo?.vertices?.length || !Array.isArray(players) || !players.length) return [];
+  const anchor = players.find(p => p.bot) || players[0];
+  return Object.values(BOT_PERSONALITIES).map(personality => {
+    const candidate = {...anchor, bot:true, personality:personality.id, name:personality.name};
+    const ranked = rankMonteCarloPlacements({
+      board,
+      player:candidate,
+      players:players.map(p => p.id===anchor.id ? candidate : p),
+      geo,
+      ports,
+      targetCount,
+      turns,
+      samples,
+      personalityId:personality.id
+    });
+    const top=ranked[0]||null;
+    const average=ranked.length ? ranked.reduce((sum,x)=>sum+x.mean,0)/ranked.length : null;
+    return {
+      personality:personality.id,
+      name:personality.name,
+      title:personality.title,
+      topVertex:top?.vertex??null,
+      topMean:top?.mean??null,
+      averageMean:average,
+      candidates:ranked.length
+    };
+  }).sort((a,b)=>(b.topMean??-Infinity)-(a.topMean??-Infinity));
 }
 
 export function summarizeAiPerformance(history = []) {

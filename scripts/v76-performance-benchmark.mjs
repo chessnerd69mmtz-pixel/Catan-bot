@@ -5,12 +5,13 @@ const require=createRequire(import.meta.url);
 let ts;
 try{ts=require('typescript');}catch{ts=require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/typescript.js');}
 import assert from 'node:assert/strict';
+import { BOT_PERSONALITIES, personalityForBot, personalityActionBias, personalityPlacementBias } from '../src/advanced-ai.mjs';
 
 const src=fs.readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8');
 const prefix=src.slice(0,src.indexOf('function App(){')).replace(/^import[^\n]+\n/gm,'');
 const transpiled=ts.transpileModule(prefix,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 const req=name=>name==='react/jsx-runtime'?{jsx(){return null},jsxs(){return null},Fragment:Symbol('fragment')}:{useState(){},useEffect(){},useMemo(){},useRef(){}};
-const ctx={console,performance,Date,Math,Set,Map,Object,Array,JSON,Number,String,Infinity,exports:{},module:{exports:{}},require:req,window:{setTimeout(){},clearTimeout(){}},document:{}};
+const ctx={console,performance,Date,Math,Set,Map,Object,Array,JSON,Number,String,Infinity,exports:{},module:{exports:{}},require:req,window:{setTimeout(){},clearTimeout(){}},document:{},BOT_PERSONALITIES,personalityForBot,personalityActionBias,personalityPlacementBias};
 vm.createContext(ctx);
 vm.runInContext(`${transpiled}\nthis.api={makeGeometry,makeBoard,makePorts,emptyBank,newPlayer,bestOpeningPair,bestOpeningCompanion,buildStrategicPlan,nearPerfectBotPlan,botModeConfig,devDeck};`,ctx,{timeout:20000});
 const a=ctx.api;

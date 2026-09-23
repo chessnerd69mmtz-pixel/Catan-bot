@@ -1871,8 +1871,7 @@ function App(){
   const [integrityErrors,setIntegrityErrors]=useState([]);
   const integrityStampRef=useRef("");
   const [mode,setMode]=useState(10);
-  const [enginePlayerCount,setEnginePlayerCount]=useState(2);
-  const [enginePlayers,setEnginePlayers]=useState(()=>makeEnginePlayers(2));
+  const [enginePlayers,setEnginePlayers]=useState(()=>makeEnginePlayers());
   const [engineBoard,setEngineBoard]=useState(null);
   const [enginePorts,setEnginePorts]=useState([]);
   const [engineBank,setEngineBank]=useState(()=>emptyBank());

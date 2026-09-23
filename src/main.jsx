@@ -2637,7 +2637,7 @@ function App(){
     if(a.type==="play")return "play:"+a.card;
     return a.type;
   };
-  const analysisSnapshot=()=>({players:clone(players),board:clone(board),ports:clone(ports),bank:clone(bank),deckCount:deck.length,heldAwards:clone(heldAwards),turnNumber});
+  const analysisSnapshot=()=>({players:clone(players),board:clone(board),ports:clone(ports),bank:clone(bank),deckCount:deck.length,heldAwards:clone(heldAwards),targetVP,turn:turnNumber,turnNumber});
   const recordDecision=(player,action)=>{
     if(player&&board){
       const stateBefore=analysisSnapshot();
@@ -3614,7 +3614,23 @@ function App(){
     hand:total(replayAfterPlayer.hand||empty())-total(replayBeforePlayer.hand||empty()),
     production:analysisProductionScore(replayAfterPlayer,replayActualState.board||[],geo)-analysisProductionScore(replayBeforePlayer,replayBeforeState.board||[],geo),
     odds:(Number((replayMove?.afterOdds||[]).find(x=>String(x.id)===String(replayMove.playerId))?.prob||0)-Number((replayMove?.beforeOdds||[]).find(x=>String(x.id)===String(replayMove.playerId))?.prob||0))
-  }:null;
+  }:null;  const learningSummary=summarizeLearning(loadLearningStore());
+  const submitAnalysisFeedback=()=>{
+    if(!replayMove||!replayBeforeState||!analysisFeedbackText.trim())return;
+    const learningState={...clone(replayBeforeState),geo,targetVP:replayBeforeState.targetVP||analysisReplay?.targetVP||targetVP,deckCount:Number.isFinite(replayBeforeState.deckCount)?replayBeforeState.deckCount:(analysisReplay?.deckCount||25)};
+    try{
+      const review=reviewFeedback(analysisFeedbackText,{state:learningState,playerId:replayMove.playerId,samples:64,horizon:6,seed:20260923+(Number(replayMove.playerId)||0)*97+(Number(replayMove.turn)||0)});
+      if(review.accepted){
+        const stored=acceptFeedbackLesson(analysisFeedbackText,{state:learningState,playerId:replayMove.playerId,review});
+        setLearningStoreVersion(v=>v+1);
+        setAnalysisFeedbackResult({...review,stored:stored.accepted,lesson:stored.lesson});
+      }else setAnalysisFeedbackResult(review);
+    }catch(error){
+      console.error("Safe bot learning review",error);
+      setAnalysisFeedbackResult({accepted:false,reason:"The feedback could not be safely evaluated. No learning was applied."});
+    }
+  };
+
   useEffect(()=>{
     if(tab!=="historyAnalyze"||!analysisPlaying||replayMoves.length<2)return;
     const intervalMs=1400/Math.max(.25,Number(analysisSpeed)||1);
@@ -3704,6 +3720,21 @@ function App(){
             <section className="replayCommentCard">
               <div className="refPanelTitle">MOVE COMMENTARY</div>
               <p>{replayMove.comment||"The engine has no commentary for this move yet."}</p>
+            </section>
+            <section className="replayLearningCard">
+              <div className="refPanelTitle">SAFE BOT LEARNING <span>{learningSummary.lessons} VERIFIED LESSONS</span></div>
+              <p className="replayLearningIntro">Tell the engine a better move in this exact position. Your suggestion is treated as a hypothesis and is only added to shared bot knowledge when the rollout math proves it beats the current best move.</p>
+              <textarea className="replayLearningInput" value={analysisFeedbackText} onChange={e=>setAnalysisFeedbackText(e.target.value)} placeholder="Example: settlement at 17 would be better here because it keeps the ore-wheat line open." rows={3}/>
+              <div className="replayLearningActions">
+                <button className="refPrimaryButton" disabled={!analysisFeedbackText.trim()} onClick={submitAnalysisFeedback}>EVALUATE & TEACH BOTS</button>
+                <button className="refGhostButton" onClick={()=>{clearLearningStore();setLearningStoreVersion(v=>v+1);setAnalysisFeedbackResult(null)}} disabled={!learningSummary.lessons}>RESET LEARNED KNOWLEDGE</button>
+              </div>
+              {analysisFeedbackResult&&<div className={"replayLearningResult "+(analysisFeedbackResult.accepted?"accepted":"rejected")}>
+                <b>{analysisFeedbackResult.accepted?"✓ LESSON ACCEPTED":"✕ LESSON REJECTED"}</b>
+                <span>{analysisFeedbackResult.reason}</span>
+                {analysisFeedbackResult.benchmark&&<small>{analysisFeedbackResult.currentBest?"Current engine best: "+engineActionText(analysisFeedbackResult.currentBest,analysisReplay.players||[]):""} {analysisFeedbackResult.improvementPct!=null?" · measured improvement "+Number(analysisFeedbackResult.improvementPct).toFixed(2)+" pp":""} {analysisFeedbackResult.confidenceLowerPct!=null?" · 95% lower bound "+Number(analysisFeedbackResult.confidenceLowerPct).toFixed(2)+" pp":""} {analysisFeedbackResult.benchmark?.samples?" · "+analysisFeedbackResult.benchmark.samples+" paired rollouts":""}</small>}
+              </div>}
+              <div className="replayLearningStats"><span>Model steps <b>{learningSummary.modelSteps}</b></span><span>Last verified gain <b>{learningSummary.lastImprovementPct.toFixed(2)} pp</b></span></div>
             </section>
 
             <section className="replayWhyCard">

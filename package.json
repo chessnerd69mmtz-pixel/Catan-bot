@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/run-tests.mjs",
+    "test": "node tests/run-tests.mjs && node tests/analysis-engine-test.mjs",
     "audit": "node scripts/final-feature-audit.mjs",
     "perf": "node scripts/v76-performance-benchmark.mjs",
     "verify": "npm run test && node tests/run-all-regressions.mjs && npm run audit && npm run perf"

@@ -39,3 +39,33 @@ Developed by Aryan Mohammed.
 - Robber theft uses one random physical resource card from the selected adjacent victim.
 - Player trading uses a Colonist-style three-section give/exchange/receive flow with bank/player tabs.
 - Bots can proactively offer trades to human players when the offer advances an immediate strategic objective while giving away surplus resources.
+
+
+## Catan Engine game analysis
+
+Completed matches are stored in local game history with the frozen final board, players, logs, duration and per-move engine metadata.
+
+### Move scoring
+
+Every recorded action is compared with the highest-scoring legal action from the same Catan Engine candidate set. The normalized engine loss is:
+
+`loss = clamp((bestScore - chosenScore) / max(20, abs(bestScore) + 20), 0, 1)`
+
+Classification thresholds:
+- **Excellent:** loss <= 1.5%
+- **Good:** loss <= 5%
+- **Inaccuracy:** loss <= 12%
+- **Mistake:** loss <= 22%
+- **Blunder:** loss > 22%
+
+**Brilliant** is intentionally rare: the move must win the game, be a non-building/non-development action, swing the engine's win-likelihood by at least 22 percentage points, and have engine loss <= 12%.
+
+Accuracy is the mean move-classification score: Blunder 0, Mistake 20, Inaccuracy 50, Good 75, Excellent 92, Brilliant 100.
+
+### Analysis UI
+
+The Analysis tab lists completed games with result, timestamp, duration, move count and accuracy. Opening a game provides move-by-move replay, the engine's top line, engine loss, win-likelihood swing, and separate human/bot accuracy.
+
+### Custom Analysis Lab
+
+The Analysis section provides **1v1 / 15 VP** and **4-player / 10 VP** board-builder modes. You can edit terrain, number tokens, ports, starting pieces, cards, VP, bank and awards. **Analyze Position** reviews the configured position; **Play & Analyze** launches a sandbox game where Player 1 is human and the remaining sides are engine opponents, with the same analysis frames recorded as normal games.

@@ -3762,3 +3762,13 @@ button,select,input{font-family:inherit}
   .advancedAiRating{grid-template-columns:24px 36px 1fr auto}
   .advancedAiRating em{display:none}
 }
+
+.advancedAiBenchmarkGrid{display:grid;gap:6px}
+.advancedAiBenchmarkRow{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;background:rgba(9,18,39,.72);border:1px solid rgba(126,166,215,.1)}
+.advancedAiBenchmarkRow.top{border-color:rgba(0,246,255,.34);background:rgba(0,246,255,.06)}
+.advancedAiBenchmarkRow>span{font-weight:900;color:#7188a7}
+.advancedAiBenchmarkRow div{display:grid;gap:2px}
+.advancedAiBenchmarkRow small{color:#7288a6;font-size:10px}
+.advancedAiBenchmarkRow strong{font-size:17px}
+.advancedAiBenchmarkRow em{font-style:normal;color:#8196b0;font-size:10px}
+@media (max-width:620px){.advancedAiBenchmarkRow{grid-template-columns:24px 1fr auto}.advancedAiBenchmarkRow em{display:none}}

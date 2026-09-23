@@ -59,6 +59,7 @@ const PROFILE_KEY="hexbound.playerProfile.v1";
 const TRACK_RECORD_KEY="hexbound.trackRecord.v1";
 const MATCH_STYLE_KEY="hexbound.matchStyle.v1";
 const defaultTrackRecord=()=>({oneVOne:{wins:0,losses:0,draws:0},fourPlayer:{wins:0,losses:0,draws:0}});
+const trackRecordTotal=r=>Number(r?.wins||0)+Number(r?.losses||0)+Number(r?.draws||0);
 const loadPlayerProfile=()=>{try{const raw=localStorage.getItem(PROFILE_KEY);const parsed=raw?JSON.parse(raw):null;return typeof parsed?.username==="string"?parsed:null}catch{return null}};
 const loadTrackRecord=()=>{try{const parsed=JSON.parse(localStorage.getItem(TRACK_RECORD_KEY)||"null");const base=defaultTrackRecord();return {...base,...parsed,oneVOne:{...base.oneVOne,...(parsed?.oneVOne||{})},fourPlayer:{...base.fourPlayer,...(parsed?.fourPlayer||{})}}}catch{return defaultTrackRecord()}};
 const loadMatchStyle=()=>{try{return localStorage.getItem(MATCH_STYLE_KEY)==="casual"?"casual":"ranked"}catch{return"ranked"}};
@@ -3251,9 +3252,9 @@ function App(){
   if(screen==="home") return <div className="app neonHomeApp">
     <header className="neonHomeTop">
       <div className="neonBrand"><div className="neonLogo">⬡</div><div><h1>HEXBOUND</h1><small>BUILD · TRADE · CONQUER</small></div></div>
-      <div className="neonIdentity"><span className="neonEyebrow">PLAYER PROFILE</span><b>${username||"SET YOUR USERNAME"}</b></div>
+      <div className="neonIdentity"><span className="neonEyebrow">PLAYER PROFILE</span><b>{username||"SET YOUR USERNAME"}</b></div>
       <div className="neonTopActions">
-        <button className={"homeMusicButton "+(musicEnabled?"active":"")} onClick={()=>setMusicEnabled(v=>!v)} title="Toggle background music"><span>${musicEnabled?"♫":"🔇"}</span><b>${musicEnabled?"MUSIC ON":"MUSIC OFF"}</b></button>
+        <button className={"homeMusicButton "+(musicEnabled?"active":"")} onClick={()=>setMusicEnabled(v=>!v)} title="Toggle background music"><span>{musicEnabled?"♫":"🔇"}</span><b>{musicEnabled?"MUSIC ON":"MUSIC OFF"}</b></button>
         <button onClick={()=>setScreen("history")}>◫<span>History</span></button>
         <button onClick={startNew}>＋<span>New Game</span></button>
       </div>
@@ -3267,22 +3268,22 @@ function App(){
           <div className="neonHeroStats"><div><b>19</b><span>HEXES</span></div><div><b>9</b><span>PORTS</span></div><div><b>4</b><span>AI LEVELS</span></div><div><b>15</b><span>1v1 VP</span></div></div>
         </div>
         <div className="neonLaunchCard">
-          <div className="neonLaunchGlow">⬡</div><span>QUICK START · ${matchStyle==="ranked"?"RANKED":"CASUAL"}</span>
+          <div className="neonLaunchGlow">⬡</div><span>QUICK START · {matchStyle==="ranked"?"RANKED":"CASUAL"}</span>
           <h3>1v1 VS BOT</h3><p>Head-to-head match to 15 Victory Points.</p>
           <button onClick={()=>{setMode("pvbot");setScreen("setup")}}>CONFIGURE 1v1 →</button>
         </div>
       </section>
       <section className="homeProfileStrip">
-        <div className="homeProfileIdentity"><span className="neonEyebrow">YOUR PLAYER</span><strong>${username||"Username not set"}</strong><small>One-time local profile · stored in this browser</small></div>
-        <div className="homeStylePicker"><span className="neonEyebrow">PLAY STYLE</span><div><button className={matchStyle==="ranked"?"selected":""} onClick={()=>setMatchStyle("ranked")}>🏆 TRACK RECORD</button><button className={matchStyle==="casual"?"selected":""} onClick={()=>setMatchStyle("casual")}>🎮 PLAY WITHOUT RECORD</button></div><small>${matchStyle==="ranked"?"Wins, losses and draws are recorded when every opponent is a bot.":"Free play: this match is not added to your competitive record."}</small></div>
-        <button className="homeMusicLarge" onClick={()=>setMusicEnabled(v=>!v)}><span>${musicEnabled?"♫":"🔇"}</span><div><b>NEON DRIVE</b><small>${musicEnabled?"UPBEAT SYNTHWAVE · PLAYING":"MUSIC MUTED"}</small></div><strong>${musicEnabled?"ON":"OFF"}</strong></button>
+        <div className="homeProfileIdentity"><span className="neonEyebrow">YOUR PLAYER</span><strong>{username||"Username not set"}</strong><small>One-time local profile · stored in this browser</small></div>
+        <div className="homeStylePicker"><span className="neonEyebrow">PLAY STYLE</span><div><button className={matchStyle==="ranked"?"selected":""} onClick={()=>setMatchStyle("ranked")}>🏆 TRACK RECORD</button><button className={matchStyle==="casual"?"selected":""} onClick={()=>setMatchStyle("casual")}>🎮 PLAY WITHOUT RECORD</button></div><small>{matchStyle==="ranked"?"Wins, losses and draws are recorded when every opponent is a bot.":"Free play: this match is not added to your competitive record."}</small></div>
+        <button className="homeMusicLarge" onClick={()=>setMusicEnabled(v=>!v)}><span>{musicEnabled?"♫":"🔇"}</span><div><b>NEON DRIVE</b><small>{musicEnabled?"UPBEAT SYNTHWAVE · PLAYING":"MUSIC MUTED"}</small></div><strong>{musicEnabled?"ON":"OFF"}</strong></button>
       </section>
       <section className="homeRecordPanel">
-        <div className="homeRecordHeader"><div><span className="neonEyebrow">COMPETITIVE TRACK RECORD</span><h3>${username||"YOUR"} VS BOTS</h3></div><span className="homeRecordNote">${matchStyle==="ranked"?"Ranked games only":"Casual games do not affect these numbers"}</span></div>
+        <div className="homeRecordHeader"><div><span className="neonEyebrow">COMPETITIVE TRACK RECORD</span><h3>{username||"YOUR"} VS BOTS</h3></div><span className="homeRecordNote">{matchStyle==="ranked"?"Ranked games only":"Casual games do not affect these numbers"}</span></div>
         <div className="homeRecordGrid">
-          <article><span>1v1 · 15 VP</span><strong>${trackRecord.oneVOne.wins}-${trackRecord.oneVOne.losses}-${trackRecord.oneVOne.draws}</strong><small>W · L · D</small><em>${trackRecordTotal(trackRecord.oneVOne)} recorded</em></article>
-          <article><span>4 PLAYER · 10 VP</span><strong>${trackRecord.fourPlayer.wins}-${trackRecord.fourPlayer.losses}-${trackRecord.fourPlayer.draws}</strong><small>W · L · D</small><em>${trackRecordTotal(trackRecord.fourPlayer)} recorded</em></article>
-          <article className="recordSummary"><span>ALL BOT MATCHES</span><strong>${trackRecordTotal(trackRecord.oneVOne)+trackRecordTotal(trackRecord.fourPlayer)}</strong><small>RECORDED</small><em>${trackRecord.oneVOne.wins+trackRecord.fourPlayer.wins} wins</em></article>
+          <article><span>1v1 · 15 VP</span><strong>{trackRecord.oneVOne.wins}-{trackRecord.oneVOne.losses}-{trackRecord.oneVOne.draws}</strong><small>W · L · D</small><em>{trackRecordTotal(trackRecord.oneVOne)} recorded</em></article>
+          <article><span>4 PLAYER · 10 VP</span><strong>{trackRecord.fourPlayer.wins}-{trackRecord.fourPlayer.losses}-{trackRecord.fourPlayer.draws}</strong><small>W · L · D</small><em>{trackRecordTotal(trackRecord.fourPlayer)} recorded</em></article>
+          <article className="recordSummary"><span>ALL BOT MATCHES</span><strong>{trackRecordTotal(trackRecord.oneVOne)+trackRecordTotal(trackRecord.fourPlayer)}</strong><small>RECORDED</small><em>{trackRecord.oneVOne.wins+trackRecord.fourPlayer.wins} wins</em></article>
         </div>
       </section>
       <section className="monopolyGrindBox" aria-label="Catan training message"><strong>Boardgames are really that deep, time for you to train</strong><span>Developed by Aryan Mohammed, to assist with the grind</span></section>
@@ -3290,7 +3291,7 @@ function App(){
         <article className="neonModeCard lime"><div className="neonModeIcon">⚔</div><div><span>CLASSIC TABLE</span><h3>4 PLAYER · 10 VP</h3><p>You + three opponents. Full board, ports, awards, development cards and AI strategy.</p><button onClick={startNew}>BUILD THE TABLE →</button></div></article>
         <article className="neonModeCard pink"><div className="neonModeIcon">🤖</div><div><span>HEAD TO HEAD</span><h3>1v1 · PVBOT · 15 VP</h3><p>Select Maya, Rook or Nova and one of four difficulty settings.</p><button onClick={()=>{setMode("pvbot");setScreen("setup")}}>PLAY PVBOT →</button></div></article>
         <article className="neonModeCard engine"><div className="neonModeIcon">♟</div><div><span>CATAN ENGINE</span><h3>ANALYSIS LAB</h3><p>Set up any board manually and get engine recommendations, classifications and replayable analysis.</p><button onClick={startEngineSetup}>OPEN ENGINE →</button></div></article>
-        <article className="neonModeCard blue"><div className="neonModeIcon">◫</div><div><span>LOCAL ARCHIVE</span><h3>GAME HISTORY</h3><p>${history.length?history.length+" completed match"+(history.length===1?"":"es")+" stored locally.":"Finished matches will appear here."}</p><button onClick={()=>setScreen("history")}>OPEN HISTORY →</button></div></article>
+        <article className="neonModeCard blue"><div className="neonModeIcon">◫</div><div><span>LOCAL ARCHIVE</span><h3>GAME HISTORY</h3><p>{history.length?history.length+" completed match"+(history.length===1?"":"es")+" stored locally.":"Finished matches will appear here."}</p><button onClick={()=>setScreen("history")}>OPEN HISTORY →</button></div></article>
       </section>
       <section className="neonFeatureStrip"><div><span>01</span><b>NO AUTO START</b><small>Choose a mode first.</small></div><div><span>02</span><b>RANKED OR CASUAL</b><small>You control whether results count.</small></div><div><span>03</span><b>NEON DRIVE</b><small>Upbeat synthwave audio with one-click mute.</small></div><div><span>04</span><b>LOCAL PROFILE</b><small>Your username is set once on this browser.</small></div></section>
     </main>

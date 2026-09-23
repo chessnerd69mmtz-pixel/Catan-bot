@@ -24,7 +24,7 @@ assert.deepEqual(Object.keys(WEIGHTS).sort(),["w1","w2","w3","w4","w5","w6","w7"
 
 for(const label of MOVE_LABELS)assert(label,"label exists");
 assert.equal(classifyMove({move:{type:"city"},before:.4,after:.4,bestAfter:.404,gameWinning:false}).label,"excellent");
-assert.equal(classifyMove({move:{type:"city"},before:.4,after:.35,bestAfter:.4,gameWinning:false}).label,"inaccuracy");
+assert.equal(classifyMove({move:{type:"city"},before:.4,after:.352,bestAfter:.4,gameWinning:false}).label,"inaccuracy");
 assert.equal(classifyMove({move:{type:"city"},before:.4,after:.2,bestAfter:.4,gameWinning:false}).label,"blunder");
 assert.equal(classifyMove({move:{type:"playerTrade"},before:.4,after:.61,bestAfter:.61,gameWinning:true}).label,"brilliant");
 

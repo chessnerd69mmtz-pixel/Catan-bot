@@ -328,14 +328,17 @@ export function benchmarkCandidateAgainstBest(state,candidate,options={}){
   };
   const ranked=[];
   for(const move of legal){
-    if(actionDecisionKey(move)===actionDecisionKey(candidate))continue;
     let total=0,n=0;
     for(let i=0;i<Math.min(24,samples);i++){const v=rolloutOnce(move,rngSeed+i*7919);if(v!=null){total+=v;n++;}}
     if(n)ranked.push({move,mean:total/n});
   }
   ranked.sort((a,b)=>b.mean-a.mean);
-  const best=ranked[0]?.move||legal.filter(m=>actionDecisionKey(m)!==actionDecisionKey(candidate))[0]||null;
-  if(!best)return{ok:true,accepted:false,reason:"No distinct baseline move was available.",samples:0};
+  const bestOverall=ranked[0]?.move||null;
+  if(!bestOverall)return{ok:true,accepted:false,reason:"No benchmarkable legal move was available.",samples:0};
+  if(actionDecisionKey(bestOverall)===actionDecisionKey(legalCandidate)){
+    return{ok:true,accepted:false,reason:"The suggested move is already the current mathematical best move; no new learning is needed.",candidate:legalCandidate,bestMove:bestOverall,alreadyBest:true,samples:Math.min(24,samples)};
+  }
+  const best=bestOverall;
   const diffs=[];
   for(let i=0;i<samples;i++){
     const seed=rngSeed+i*7919;

@@ -3636,3 +3636,29 @@ button,select,input{font-family:inherit}
 .usernameCard{width:min(460px,94vw);padding:28px;border:1px solid rgba(0,246,255,.35);border-radius:18px;background:linear-gradient(145deg,rgba(7,19,44,.98),rgba(17,7,35,.98));box-shadow:0 0 60px rgba(0,246,255,.12),0 0 90px rgba(255,43,214,.08);text-align:center}.usernameCard .neonLaunchGlow{font-size:42px}.usernameCard h2{margin:8px 0;font-size:28px}.usernameCard p{margin:0 auto 16px;max-width:380px;font-size:11px;line-height:1.55;color:rgba(255,255,255,.56)}.usernameCard input{width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid rgba(0,246,255,.3);border-radius:10px;background:#050b1c;color:#fff;outline:none;font-size:15px;text-align:center}.usernameCard input:focus{border-color:#00f6ff;box-shadow:0 0 20px rgba(0,246,255,.1)}.usernameCard .startButton{width:100%;margin-top:10px}.usernameCard .startButton:disabled{opacity:.3;cursor:not-allowed}
 @media(max-width:980px){.neonIdentity{display:none}.homeProfileStrip{grid-template-columns:1fr}.homeRecordGrid{grid-template-columns:1fr 1fr}.homeRecordGrid .recordSummary{grid-column:1/-1}}
 @media(max-width:650px){.neonTopActions{gap:4px}.homeMusicButton{min-width:58px!important}.homeMusicButton b{display:none}.homeRecordGrid{grid-template-columns:1fr}.homeRecordGrid .recordSummary{grid-column:auto}.homeStylePicker>div{flex-direction:column}}
+
+
+/* v80 — bright cyan command-center homepage */
+.neonHomeApp{background:radial-gradient(circle at 18% 8%,rgba(0,255,255,.42),transparent 28%),radial-gradient(circle at 82% 12%,rgba(0,255,220,.28),transparent 25%),radial-gradient(circle at 50% 85%,rgba(40,130,255,.22),transparent 35%),linear-gradient(145deg,#001a25,#00394a 42%,#005d70 72%,#00151f);color:#f7ffff}
+.neonHomeApp::before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(rgba(0,246,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(0,246,255,.035) 1px,transparent 1px);background-size:32px 32px}
+.neonHomeTop{background:rgba(0,23,32,.88);backdrop-filter:blur(18px);border-bottom-color:rgba(116,255,255,.55);box-shadow:0 8px 35px rgba(0,0,0,.28),0 0 28px rgba(0,246,255,.12)}
+.neonLogo{background:linear-gradient(145deg,#baffff,#00eaff 55%,#008bff);color:#00141c;border-color:#a8ffff;box-shadow:0 0 24px rgba(0,246,255,.7),inset 0 0 12px rgba(255,255,255,.45)}
+.neonBrand h1{color:#eaffff;text-shadow:0 0 18px rgba(0,246,255,.55)}
+.neonIdentity,.neonTopActions button,.homeProfileStrip,.homeRecordPanel,.neonModeCard,.neonFeatureStrip,.neonLaunchCard{background:rgba(0,26,39,.72);border-color:rgba(91,255,255,.42);box-shadow:0 10px 35px rgba(0,0,0,.2),inset 0 0 22px rgba(0,246,255,.035)}
+.neonTopActions button:hover,.homeStylePicker button:hover,.neonModeCard:hover,.neonLaunchCard:hover{border-color:#8fffff;box-shadow:0 0 26px rgba(0,246,255,.25),0 12px 35px rgba(0,0,0,.25);transform:translateY(-2px)}
+.neonEyebrow{color:#9cffff;text-shadow:0 0 10px rgba(0,246,255,.45)}
+.neonHero h2{text-shadow:0 0 30px rgba(0,246,255,.28)}
+.neonHero h2 em{color:#baff35;text-shadow:0 0 22px rgba(186,255,53,.48)}
+.neonHero p,.homeProfileIdentity small,.homeStylePicker small,.neonModeCard p{color:#c0e9f2}
+.neonHeroStats div{background:rgba(0,36,50,.75);border-color:rgba(116,255,255,.45);box-shadow:inset 0 0 18px rgba(0,246,255,.08)}
+.neonHeroStats b{color:#eaffff;text-shadow:0 0 10px rgba(0,246,255,.35)}
+.neonHeroStats span{color:#83f7ff}
+.neonLaunchCard{background:linear-gradient(155deg,rgba(0,80,101,.88),rgba(0,27,43,.88));border-color:#66ffff;box-shadow:0 0 35px rgba(0,246,255,.2),inset 0 0 40px rgba(0,246,255,.08)}
+.neonLaunchGlow{color:#7fffff;text-shadow:0 0 30px #00f6ff;animation:cyanPulse 2.5s ease-in-out infinite}
+.neonLaunchCard button,.neonModeCard button{background:linear-gradient(100deg,#00d9ff,#00ffca);color:#00141b;border-color:#9fffff;box-shadow:0 0 20px rgba(0,246,255,.35)}
+.homeProfileStrip,.homeRecordPanel{background:linear-gradient(145deg,rgba(0,43,58,.82),rgba(0,20,34,.82))}
+.homeMusicLarge{background:rgba(0,39,53,.9)!important;border-color:rgba(108,255,255,.45)!important}
+.homeRecordGrid article{background:rgba(0,29,43,.72);border-color:rgba(81,240,255,.3)}
+.neonFeatureStrip{background:rgba(0,23,35,.74)}
+.neonHomeFooter{color:#9bdde8;border-color:rgba(116,255,255,.25);background:rgba(0,18,28,.45)}
+@keyframes cyanPulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 8px rgba(0,246,255,.35))}50%{transform:scale(1.08);filter:drop-shadow(0 0 24px rgba(0,246,255,.8))}}

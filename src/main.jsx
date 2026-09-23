@@ -2284,7 +2284,32 @@ function App(){
     pending.baselineLabel=label;
     pending.decisionStart=decisionsRef.current.length;
   };
-  const finalizeAnalysisTurn=({ps,bd,pr,bk,dk,ha,summary=""})=>{const pending=analysisTurnRef.current;if(!pending||!ps?.length||!bd?.length)return;const afterEval=evaluateCatanState({players:ps,board:bd,geo,ports:pr||[],bank:bk||emptyBank()});const afterOdds=ps.map(p=>({id:p.id,name:p.name,value:afterEval[p.id]||0,prob:afterEval[p.id]||0}));const decisionsForTurn=decisionsRef.current.slice(pending.decisionStart).filter(d=>d.turn===pending.turn&&d.playerId===pending.playerId);const actions=decisionsForTurn.map(d=>d.action).filter(Boolean);const mainAction=actions.length?actions.join(" → "):summary||"Turn completed";const actedPlayer=pending.before.players.find(x=>x.id===pending.playerId)||ps.find(x=>x.id===pending.playerId);const isBotTurn=!!actedPlayer?.bot;const meBefore=pending.beforeOdds.find(x=>x.id===pending.playerId)?.prob??0.5;const meAfter=afterOdds.find(x=>x.id===pending.playerId)?.prob??meBefore;const swing=meAfter-meBefore;const losses=decisionsForTurn.map(d=>Number.isFinite(d.engineLoss)?d.engineLoss:1);const engineLoss=losses.length?Math.min(...losses):Math.max(0,-swing);const classifiedDecisions=decisionsForTurn.map(d=>({...d,swing,classification:d.classification||classifyAnalysisMove({loss:d.engineLoss??engineLoss,swing,action:d.action,gameWinning:!!d.gameWinning})}));const classification=classifyAnalysisMove({loss:engineLoss,swing,action:mainAction,gameWinning:false});const formulaBefore=evaluateCatanState({...pending.before,geo});const formulaAfter=evaluateCatanState({players:ps,board:bd,geo,ports:pr||[],bank:bk||emptyBank()});const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta:swing,swing,engineLoss,classification,formula:{weights:ANALYSIS_WEIGHT_CONFIG,before:formulaBefore,after:formulaAfter,equityLoss:Math.max(0,(formulaBefore[pending.playerId]||0)-(formulaAfter[pending.playerId]||0))},beforeOdds:ps.map(p=>({id:p.id,name:p.name,prob:formulaBefore[p.id]||0})),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:{players:clone(ps),board:clone(bd),ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null})},decisions:clone(classifiedDecisions),moves:clone(classifiedDecisions),summary};analysisFramesRef.current=[...analysisFramesRef.current,frame];analysisTurnRef.current=null;};
+  const finalizeAnalysisTurn=({ps,bd,pr,bk,dk,ha,summary=""})=>{
+    const pending=analysisTurnRef.current;
+    if(!pending||!ps?.length||!bd?.length)return;
+    const afterState={players:clone(ps),board:clone(bd),geo,ports:clone(pr||[]),bank:clone(bk||emptyBank()),deckCount:Array.isArray(dk)?dk.length:0,heldAwards:clone(ha||{roadOwner:null,armyOwner:null}),targetVP};
+    const afterEval=evaluateCatanState({...afterState,geo});
+    const afterOdds=ps.map(p=>({id:p.id,name:p.name,value:afterEval[p.id]||0,prob:afterEval[p.id]||0}));
+    const decisionsForTurn=decisionsRef.current.slice(pending.decisionStart).filter(d=>d.turn===pending.turn&&d.playerId===pending.playerId);
+    decisionsForTurn.forEach(d=>{if(!d.stateAfter)d.stateAfter=afterState;});
+    const actions=decisionsForTurn.map(d=>d.action).filter(Boolean);
+    const mainAction=actions.length?actions.join(" → "):summary||"Turn completed";
+    const actedPlayer=pending.before.players.find(x=>x.id===pending.playerId)||ps.find(x=>x.id===pending.playerId);
+    const isBotTurn=!!actedPlayer?.bot;
+    const meBefore=pending.beforeOdds.find(x=>x.id===pending.playerId)?.prob??0.5;
+    const meAfter=afterOdds.find(x=>x.id===pending.playerId)?.prob??meBefore;
+    const swing=meAfter-meBefore;
+    const losses=decisionsForTurn.map(d=>Number.isFinite(d.engineLoss)?d.engineLoss:1);
+    const engineLoss=losses.length?Math.min(...losses):Math.max(0,-swing);
+    const classifiedDecisions=decisionsForTurn.map(d=>({...d,swing,classification:d.classification||classifyAnalysisMove({loss:d.engineLoss??engineLoss,swing,action:d.action,gameWinning:!!d.gameWinning})}));
+    const classification=classifyAnalysisMove({loss:engineLoss,swing,action:mainAction,gameWinning:false});
+    const formulaBefore=evaluateCatanState({...pending.before,geo});
+    const formulaAfter=evaluateCatanState({...afterState,geo});
+    const frame={turn:pending.turn,playerId:pending.playerId,playerName:pending.playerName,isBot:isBotTurn,action:mainAction,delta:swing,swing,engineLoss,classification,formula:{weights:ANALYSIS_WEIGHT_CONFIG,before:formulaBefore,after:formulaAfter,equityLoss:Math.max(0,(formulaBefore[pending.playerId]||0)-(formulaAfter[pending.playerId]||0))},beforeOdds:ps.map(p=>({id:p.id,name:p.name,prob:formulaBefore[p.id]||0})),afterOdds:clone(afterOdds),baseline:pending.baselineLabel||"turn start",before:pending.before,after:afterState,decisions:clone(classifiedDecisions),moves:clone(classifiedDecisions),summary};
+    analysisFramesRef.current=[...analysisFramesRef.current,frame];
+    analysisTurnRef.current=null;
+    persistLocalSnapshot("in_progress");
+  };
 
   const startEngineSetup=()=>{
     const b=makeEngineBoard(geo,mapSettings);

@@ -3561,6 +3561,7 @@ function App(){
   const replayAlternativeState=replayAlternativeMove&&replayBeforeState?applyAnalysisMove(replayBeforeState,replayAlternativeMove,geo):null;
   const replayVisibleState=analysisShowAlternative&&replayAlternativeState?replayAlternativeState:replayActualState;
   const replayAction={...(replayMove?.payload||{}),type:replayMove?.payload?.type||String(replayMove?.action||"").split(" ")[0].toLowerCase(),playerId:replayMove?.playerId};
+  const replayDisplayedAction=analysisShowAlternative&&replayAlternativeMove?replayAlternativeMove:replayAction;
   const replayWhyRows=replayMove&&replayBeforeState?engineActionBreakdown(replayAction,{active:(replayBeforeState.players||[]).find(p=>String(p.id)===String(replayMove.playerId))||replayBeforeState.players?.[0],players:replayBeforeState.players||[],board:replayBeforeState.board||[],geo,ports:replayBeforeState.ports||[],bank:replayBeforeState.bank||emptyBank(),deck:replayBeforeState.deck||[],targetVP:replayBeforeState.targetVP||analysisReplay?.targetVP||10,heldAwards:replayBeforeState.heldAwards||analysisReplay?.awards||{roadOwner:null,armyOwner:null}}):[];
   const replayOpeningRanking=replayMove&&replayBeforeState&&replayAction.type==="settlement"?replayPlacementRanking(replayBeforeState,replayMove.playerId,geo,8):[];
   const replaySeverity=replayMove?replayMove.severity||replayMoveSeverity(replayMove):null;
@@ -3633,7 +3634,7 @@ function App(){
           <section className="analysisReplayBoardColumn">
             <section className="analysisReplayBoard">
               <div className="analysisBoardModeBanner"><b>{analysisShowAlternative?"ENGINE ALTERNATIVE":"RECORDED MOVE"}</b><span>{analysisShowAlternative&&replayAlternativeMove?engineActionText(replayAlternativeMove,analysisReplay.players||[]):replayMove.action||"Move"}</span></div>
-              <Board geo={geo} board={replayVisibleState?.board||analysisReplay.board} players={replayVisibleState?.players||analysisReplay.players} ports={replayVisibleState?.ports||analysisReplay.ports||[]} selectedV={replayAction.type==="settlement"||replayAction.type==="city"?replayAction.spot:null} selectedE={replayAction.type==="road"?replayAction.spot:null} analysisMode={true}/>
+              <Board geo={geo} board={replayVisibleState?.board||analysisReplay.board} players={replayVisibleState?.players||analysisReplay.players} ports={replayVisibleState?.ports||analysisReplay.ports||[]} selectedV={replayDisplayedAction.type==="settlement"||replayDisplayedAction.type==="city"?replayDisplayedAction.spot:null} selectedE={replayDisplayedAction.type==="road"?replayDisplayedAction.spot:null} analysisMode={true}/>
               <div className="analysisBoardLegend"><span>Board shows the position after the selected move.</span>{replayAlternativeState&&<b>{analysisShowAlternative?"Alternative state from engine candidate":"Alternative available"}</b>}</div>
             </section>
             <section className="replayWhatChangedCard">

@@ -152,11 +152,12 @@ console.log("ROBBER VICTIM REGRESSION PASSED — steal source is constrained to 
 // immediately improve a build objective by obtaining a missing resource.
 {
   const b=L.makeBoard(geo,{highPipsTouch:true}),ports=L.makePorts(geo);
-  const bot=L.newPlayer(0,"Bot",true,"Impossible"),human=L.newPlayer(1,"You",false,"Human");
+  const bot=L.newPlayer(0,"Bot",true,"Impossible"),human=L.newPlayer(1,"You",false,"Human"),third=L.newPlayer(2,"Third",false,"Human");
   bot.hand={wood:3,brick:1,sheep:0,wheat:2,ore:2};
   human.hand={wood:0,brick:0,sheep:2,wheat:0,ore:0};
+  third.hand={wood:0,brick:0,sheep:0,wheat:0,ore:0};
   bot.settlements=[0];
-  const offers=L.strategicTradeCandidates(bot,[bot,human],b,geo,ports,L.emptyBank(),10);
+  const offers=L.strategicTradeCandidates(bot,[bot,human,third],b,geo,ports,L.emptyBank(),10);
   if(!offers.some(a=>a.type==="playerTrade"&&a.partner===human.id&&a.getBundle?.sheep))throw new Error("Bot failed to generate an objective-driven sheep trade offer");
 }
 console.log("STRATEGIC BOT TRADE REGRESSION PASSED — offers are generated around immediate build objectives");

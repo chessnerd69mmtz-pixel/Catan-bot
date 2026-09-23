@@ -2033,12 +2033,46 @@ function nearPerfectBotPlan(p,players,board,geo,ports,bank,deck,targetVP,heldAwa
     const noise=(Math.random()-.5)*2*difficulty.noise*scale;
     return {...a,difficultyScore:a.score+noise};
   }).sort((a,b)=>b.difficultyScore-a.difficultyScore);
+
+  // Safe self-learning: a learned suggestion is only allowed to influence play
+  // after it beats the current mathematical best move under the same rollout gate.
+  let verifiedLesson=null;
+  try{
+    const learningStore=loadLearningStore();
+    if(learningStore?.lessons?.length){
+      const learningState={players,board,geo,ports,bank,deckCount:deck?.length||0,targetVP,heldAwards};
+      const learned=chooseLearnedCandidate(learningState,p.id,scored,learningStore);
+      const currentBest=scored[0];
+      if(learned?.action&&currentBest&&decisionKeyForEngine(learned.action)!==decisionKeyForEngine(currentBest)){
+        const verification=verifyLearnedCandidate(learningState,p.id,learned.action,{samples:48,horizon:6,seed:20260923+p.id*97});
+        if(verification?.accepted){
+          const learnedCandidate=scored.find(a=>decisionKeyForEngine(a)===decisionKeyForEngine(learned.action));
+          if(learnedCandidate){
+            verifiedLesson={...verification,action:learnedCandidate};
+            learnedCandidate.learningVerified=true;
+            learnedCandidate.learningImprovement=verification.meanImprovement;
+            learnedCandidate.learningConfidence=verification.confidenceLower;
+            const key=decisionKeyForEngine(learnedCandidate);
+            const index=scored.findIndex(a=>decisionKeyForEngine(a)===key);
+            if(index>0){
+              const [picked]=scored.splice(index,1);
+              scored.unshift(picked);
+            }
+          }
+        }
+      }
+    }
+  }catch{}
+
   const deadline=turnState.deadline||0,top=scored.slice(0,difficulty.lookaheadTop);
   let best=null;
   for(const a of top){
     const now=typeof performance!=='undefined'&&performance.now?performance.now():Date.now();
     if(deadline&&now>=deadline-BOT_DEEP_SEARCH_RESERVE_MS)break;
     let score=a.difficultyScore;
+    if(a.learningVerified){
+      score+=Math.max(1000,Math.abs(score)*2);
+    }
     if(a.type!=='trade'&&a.type!=='playerTrade'){
       const responseScale=difficulty.responseWeight*(top.indexOf(a)<2?1.2:.8);
       score-=opponentResponseValue(a,p,players,board,geo,ports,bank,deck,targetVP,turnState)*responseScale;
@@ -2052,6 +2086,13 @@ function nearPerfectBotPlan(p,players,board,geo,ports,bank,deck,targetVP,heldAwa
   best.engineTop3=scored.slice(0,3).map(a=>({type:a.type,spot:a.spot,card:a.card,partner:a.partner,score:a.score,roads:a.roads,actionKey:decisionKeyForEngine(a),difficulty:difficulty.key}));
   best.planValue=best.score;
   best.botDifficulty=difficulty.key;
+  if(best.learningVerified&&verifiedLesson){
+    best.learningVerified=true;
+    best.learningImprovement=verifiedLesson.meanImprovement;
+    best.learningConfidence=verifiedLesson.confidenceLower;
+    best.learningSamples=verifiedLesson.samples;
+    best.learningNote="Accepted from user feedback only after a statistically significant improvement over the current best move.";
+  }
   return best;
 }
 function staticStrategicValue(p,players,board,geo,ports,bank,deck,targetVP,heldAwards){

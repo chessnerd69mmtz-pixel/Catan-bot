@@ -192,7 +192,8 @@ function applyApproximateAction(state,action){
     if(!pay(COSTS.city)||!(p.settlements||[]).includes(action.spot))return null;
     p.settlements=p.settlements.filter(v=>v!==action.spot);p.cities=[...(p.cities||[]),action.spot];p.vp=(p.vp||0)+1;
   }else if(action.type==="settlement"){
-    if(!pay(COSTS.settlement)||!legalSettlement(action.spot,s.players,s.geo)||!networkedVertex(action.spot,p,s.geo))return null;
+    const openingPlacement=(p.settlements||[]).length===0&&(p.cities||[]).length===0&&(p.roads||[]).length===0;
+    if(!pay(COSTS.settlement)||!legalSettlement(action.spot,s.players,s.geo)||(!openingPlacement&&!networkedVertex(action.spot,p,s.geo)))return null;
     p.settlements=[...(p.settlements||[]),action.spot];p.vp=(p.vp||0)+1;
   }else if(action.type==="road"){
     if(!pay(COSTS.road)||!legalRoad(action.spot,p,s))return null;
@@ -282,6 +283,12 @@ export function findBestAlternative(state,actualMove,playerId,options={}){
   }
   return{bestMove:best.move,bestMoveWP:best.wp,actualMoveWP,rolloutCount:N};
 }
+export function applyAnalysisMove(state,move,geoOverride=null){
+  const base=clone(state||{});
+  base.geo=geoOverride||base.geo;
+  return applyApproximateAction(base,{...(move||{}),playerId:move?.playerId});
+}
+
 export function classifyMove({move,before,after,bestAfter,gameWinning=false}){
   const lossPct=Math.max(0,(Number(bestAfter||0)-Number(after||0))*100);
   let label=lossPct<.5?"excellent":lossPct<2?"good":lossPct<5?"inaccuracy":lossPct<12?"mistake":"blunder";

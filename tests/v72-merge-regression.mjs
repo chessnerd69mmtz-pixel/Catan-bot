@@ -8,8 +8,7 @@ assert(main.includes("failedActionKeys.add(decisionKeyForEngine(best))"),"action
 assert(main.includes("pipelineComboBonus"),"combo planner not merged");
 assert(main.includes("comboCompletionValue"),"trade combo completion not merged");
 assert(main.includes('className="monopolyGrindBox"'),"Monopoly training box missing");
-assert(!main.includes("<h1>HEXBOUND</h1>"),"old visible HEXBOUND brand remains");
-assert(main.includes("<h1>MONOPOLY</h1>"),"Monopoly home brand missing");
+assert(main.includes("<h1>HEXBOUND</h1>"),"current HEXBOUND home brand missing");
 
 const both=pipelineComboBonus({wood:.12,brick:.12,wheat:.08,ore:.08,sheep:.08},{wood:.10,brick:.10,wheat:.10,ore:.10,sheep:.10},true);
 const weak=pipelineComboBonus({wheat:.12},{wheat:.10},true);

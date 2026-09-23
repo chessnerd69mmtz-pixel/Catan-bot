@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { analyzeGameRecord, computePlayerAnalysis, evaluateState, ENGINE_VERSION, LABEL_META } from "./analysis-engine.mjs";
 import { loadLocalGames, saveLocalGame, getCachedAnalysis, saveAnalysisCache, supabaseConfigured, getAuthSession, fetchCloudGames, mergeGameRecords, syncCompletedGame, flushSyncQueue, signInWithEmail, signUpWithEmail, signOut } from "./game-persistence.mjs";
+import AdvancedAiPanel from "./AdvancedAiPanel.jsx";
+import { BOT_PERSONALITIES, personalityForBot, personalityActionBias, personalityPlacementBias, recordEloGame } from "./advanced-ai.mjs";
 
 const RES=["wood","brick","sheep","wheat","ore"];
 const LABEL={wood:"Wood",brick:"Brick",sheep:"Sheep",wheat:"Wheat",ore:"Ore"};
@@ -268,7 +270,7 @@ function makePorts(geo){
 }
 function emptyDev(){return {...Object.fromEntries(Object.keys(DEV).map(k=>[k,0])),playedKnights:0};}
 function devDeck(){return shuffle(Object.entries(DEV).flatMap(([k,n])=>Array(n).fill(k)));}
-function newPlayer(id,name,bot,diff){return{id,name,bot,diff,color:PLAYER_COLORS[id],vp:0,hand:empty(),settlements:[],cities:[],roads:[],development:emptyDev()};}
+function newPlayer(id,name,bot,diff,personality=null){return{id,name,bot,diff,personality:personality||(!bot?"human":personalityForBot(name).id),color:PLAYER_COLORS[id],vp:0,hand:empty(),settlements:[],cities:[],roads:[],development:emptyDev()};}
 function adjacentProduction(geo,board,p){const out=empty();const addV=(v,m)=>geo.vertexTiles[v].forEach(tid=>{const t=board[tid];if(t.resource!=="desert"&&!t.robber)out[t.resource]+=(PROB[t.number]||0)*m});(p?.settlements||[]).forEach(v=>addV(v,1));(p?.cities||[]).forEach(v=>addV(v,2));return out;}
 const ROAD_LENGTH_CACHE=new WeakMap();
 function connectedRoadLength(p,geo,players){
@@ -377,7 +379,7 @@ function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
 let ACTIVE_BOT_CACHE=null;
 function botPlanningFingerprint(p,plan=null){
   const h=RES.map(r=>p?.hand?.[r]||0).join(',');
-  return `${p?.id}|${h}|${(p?.settlements||[]).join(',')}|${(p?.cities||[]).join(',')}|${(p?.roads||[]).join(',')}|${p?.vp||0}|${plan?.type||''}|${plan?.target??''}|${(plan?.path||[]).join(',')}`;
+  return `${p?.id}|${p?.personality||''}|${h}|${(p?.settlements||[]).join(',')}|${(p?.cities||[]).join(',')}|${(p?.roads||[]).join(',')}|${p?.vp||0}|${plan?.type||''}|${plan?.target??''}|${(plan?.path||[]).join(',')}`;
 }
 function createBotPlanningCache(){
   return {need:new Map(),spot:new Map(),future:new Map(),threats:new Map(),opponentRanks:new Map(),road:new Map(),placement:new Map(),city:new Map(),boardScarcity:new Map(),openedAt:(typeof performance!=="undefined"&&performance.now?performance.now():Date.now())};
@@ -1678,22 +1680,23 @@ function cheapCandidateScore(action,p,players,board,geo,ports,bank,deck,targetVP
   return Number.isFinite(s)?s:-Infinity;
 }
 function fastBotActionScore(action,p,players,board,geo,ports,bank,deck,targetVP,heldAwards,turnState={},cache){
+  const personalityBias=personalityActionBias(p?.personality||p?.name,action,p,{board,geo,ports,players});
   const planBonus=strategicPlanBonus(action,turnState.strategicPlan||null,p,players,board,geo,ports,bank,targetVP);
   const race=botRacePressure(p,players,geo,targetVP,heldAwards),handPressure=Math.max(0,total(p.hand)-8);
-  if(action.type==='play'&&action.card==='Victory Point'&&action.winReveal)return 10000;
-  if(action.type==='settlement')return placementScore(action.spot,p,players,board,geo,ports,bank,targetVP,heldAwards,cache)+planBonus+race*2+handPressure*.9+(portAt(action.spot,ports)?1.5:0);
-  if(action.type==='city')return cityActionValue(action.spot,p,players,board,geo,ports,bank,targetVP,turnState)+planBonus+race*2+handPressure*.8;
-  if(action.type==='road')return roadActionPotential(action.spot,p,players,board,geo,targetVP,ports,bank,turnState)+planBonus+race*.25+handPressure*.35;
-  if(action.type==='trade'||action.type==='playerTrade')return fastTradeOpportunity(action,p,players,board,geo,ports,bank,deck,targetVP,heldAwards,cache,turnState)+planBonus;
-  if(action.type==='buyDev')return 5+(turnState.cardUtility||0)*1.7+planBonus-(canPay(p.hand,COSTS.settlement)||canPay(p.hand,COSTS.city)?4:0);
-  if(action.type==='pass')return -2;
+  if(action.type==='play'&&action.card==='Victory Point'&&action.winReveal)return 10000+personalityBias;
+  if(action.type==='settlement')return placementScore(action.spot,p,players,board,geo,ports,bank,targetVP,heldAwards,cache)+planBonus+race*2+handPressure*.9+(portAt(action.spot,ports)?1.5:0)+personalityBias;
+  if(action.type==='city')return cityActionValue(action.spot,p,players,board,geo,ports,bank,targetVP,turnState)+planBonus+race*2+handPressure*.8+personalityBias;
+  if(action.type==='road')return roadActionPotential(action.spot,p,players,board,geo,targetVP,ports,bank,turnState)+planBonus+race*.25+handPressure*.35+personalityBias;
+  if(action.type==='trade'||action.type==='playerTrade')return fastTradeOpportunity(action,p,players,board,geo,ports,bank,deck,targetVP,heldAwards,cache,turnState)+planBonus+personalityBias;
+  if(action.type==='buyDev')return 5+(turnState.cardUtility||0)*1.7+planBonus-(canPay(p.hand,COSTS.settlement)||canPay(p.hand,COSTS.city)?4:0)+personalityBias;
+  if(action.type==='pass')return -2+personalityBias;
   if(action.type==='play'){
-    if(action.card==='Road Building')return 7+(turnState.roadBuildingPair?.value||bestRoadBuildingPair(p,players,board,geo,ports,bank,targetVP,turnState.deadline||null,turnState.strategicPlan||null)?.value||0)*.4+planBonus;
-    if(action.card==='Year of Plenty')return 6+(turnState.yopPair?.value||bestYearOfPlentyPair(p,players,board,geo,ports,bank,deck,targetVP,botModeConfig(players,targetVP),turnState)?.value||0)*.7+planBonus;
-    if(action.card==='Monopoly'){const m=turnState.monopolyTarget||bestMonopolyTarget(p,players,board,geo,ports,bank,targetVP,deck,turnState);return (m?.expectedGain||0)*4+(m?.value||0)*.5+planBonus;}
-    if(action.card==='Knight'){const rb=chooseRobberAction(p,players,board,geo,ports,bank,targetVP,turnState.memorySnapshots||[]);return 5+(rb?.score||0)*.5+planBonus;}
+    if(action.card==='Road Building')return 7+(turnState.roadBuildingPair?.value||bestRoadBuildingPair(p,players,board,geo,ports,bank,targetVP,turnState.deadline||null,turnState.strategicPlan||null)?.value||0)*.4+planBonus+personalityBias;
+    if(action.card==='Year of Plenty')return 6+(turnState.yopPair?.value||bestYearOfPlentyPair(p,players,board,geo,ports,bank,deck,targetVP,botModeConfig(players,targetVP),turnState)?.value||0)*.7+planBonus+personalityBias;
+    if(action.card==='Monopoly'){const m=turnState.monopolyTarget||bestMonopolyTarget(p,players,board,geo,ports,bank,targetVP,deck,turnState);return (m?.expectedGain||0)*4+(m?.value||0)*.5+planBonus+personalityBias;}
+    if(action.card==='Knight'){const rb=chooseRobberAction(p,players,board,geo,ports,bank,targetVP,turnState.memorySnapshots||[]);return 5+(rb?.score||0)*.5+planBonus+personalityBias;}
   }
-  return planBonus;
+  return planBonus+personalityBias;
 }
 function simulatePublicBotAction(action,p,players,board,geo,ports,bank,deck){
   let nextPlayers=players.map(x=>x.id===p.id?{...x,hand:{...x.hand},settlements:[...(x.settlements||[])],cities:[...(x.cities||[])],roads:[...(x.roads||[])]}:x),nextBank={...bank};
@@ -1815,7 +1818,8 @@ function placementScore(v,p,players,board,geo,ports,bank=emptyBank(),targetVP=pl
   const sixEightBonus=numbers.includes(6)&&numbers.includes(8)?2.2:0;
   const oreWheatBonus=sp.ore*36>=4&&sp.wheat*36>=4?2.6:0;
   const productionBonus=productionPips*.018;
-  const result=ph.wP*P+ph.wC*C+ph.wE*E+ph.wY*Y+block+urgency-ph.riskWeight*risk+port+productionBonus+sixEightBonus+oreWheatBonus;
+  const personalityBonus=personalityPlacementBias(p?.personality||p?.name,v,board,geo,ports,players);
+  const result=ph.wP*P+ph.wC*C+ph.wE*E+ph.wY*Y+block+urgency-ph.riskWeight*risk+port+productionBonus+sixEightBonus+oreWheatBonus+personalityBonus;
   if(cache)cache.placement.set(`${botPlanningFingerprint(p,plannerState?.strategicPlan||null)}|placement|${v}|${targetVP}`,result);
   return result;
 }
@@ -2394,8 +2398,8 @@ function App(){
     currentGameIdRef.current=`game-${Date.now()}-${gameRunRef.current}`;
     const b=makeBoard(geo,mapSettings);
     const ps=isPVBot
-      ? [newPlayer(0,username.trim()||"You",false,"Human"),newPlayer(1,pvBot,true,pvBotDiff)]
-      : [newPlayer(0,username.trim()||"You",false,"Human"),newPlayer(1,"Maya",opponentTypes[0]!=="Human",botDiffs[0]),newPlayer(2,"Rook",opponentTypes[1]!=="Human",botDiffs[1]),newPlayer(3,"Nova",opponentTypes[2]!=="Human",botDiffs[2])];
+      ? [newPlayer(0,username.trim()||"You",false,"Human","human"),newPlayer(1,pvBot,true,pvBotDiff,personalityForBot(pvBot).id)]
+      : [newPlayer(0,username.trim()||"You",false,"Human","human"),newPlayer(1,"Maya",opponentTypes[0]!=="Human",botDiffs[0],"balanced"),newPlayer(2,"Rook",opponentTypes[1]!=="Human",botDiffs[1],"expansionist"),newPlayer(3,"Nova",opponentTypes[2]!=="Human",botDiffs[2],"trader")];
     const order=isPVBot?[0,1]:[0,1,2,3];
     botSevenResumeRef.current=null;setBoard(b);setPorts(makePorts(geo));setDeck(devDeck());setBank(emptyBank());setPlayers(ps);setTurn(0);setSetupRound(1);setSetupOrder(order);setSetupIndex(0);setRoll(null);setDice(null);setLastBotRoll(null);setHasRolled(false);setWinner(null);setDrawn(false);setDrawOffer(null);setTurnSecondsLeft(TURN_BASE_SECONDS);turnDeadlineRef.current=null;timerTurnTokenRef.current=null;timerExpiredTokenRef.current=null;setDevBought(false);setDevCardsBought({});setDevPlayed(false);setDevChoice(null);setLastPrivateDevDraw(null);setRobberMode(false);setDiscardState(null);setDiscardSelection(empty());setRobberVictim(null);setHeldAwards({roadOwner:null,armyOwner:null});setPvOpeningPlan(null);setDecisions([]);setTurnNumber(1);setLastTurnSummary("");decisionsRef.current=[];analysisFramesRef.current=[];analysisTurnRef.current=null;botTurnRef.current=null;setBotTurnStatus("idle");memoryRef.current=[];turnSequenceRef.current=0;const openingLog=isPVBot?"New 1v1 PVBot match — Colonist-style ranked rules: 15 VP, balanced dice, Friendly Robber, 9-card safe hand, no player trading, ≤5s bot engine.":`New ${targetVP}-VP game. Place your first settlement.`;setLogEntries([{id:`start-${Date.now()}`,turn:1,text:openingLog}]);setGameStarted(Date.now());setTab("game");setSidePanel("activity");setChatUnread(0);setChatMessages([{id:`welcome-${Date.now()}`,name:"MONOPOLY",text:isPVBot?"1v1 ranked-style game: no player trading, Friendly Robber, Balanced Dice, 15 VP.":"Base game: 4 players, 10 VP, standard player trading and random dice.",turn:1,time:new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}]);setRulesOpen(false);if(botTradeTimeoutRef.current)window.clearTimeout(botTradeTimeoutRef.current);botTradeTimeoutRef.current=null;botTradeResumeRef.current=null;setTradeOffer(null);setScreen("setupBoard");window.setTimeout(()=>persistLocalSnapshot("in_progress"),0);
   };
@@ -2530,6 +2534,7 @@ function App(){
     const next=[snap,...history].filter((g,i,a)=>i===a.findIndex(x=>(x.gameId||x.id)===(g.gameId||g.id))).slice(0,100);
     recordCompetitiveResult(snap.gameMode,winnerPlayer?.id===0?"win":"loss");
     saveLocalGame(snap);
+    if(snap.recordedInTrackRecord) recordEloGame(snap);
     setWinner(winnerPlayer);setDrawn(false);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");
     void syncFinalGame(snap,null);
     try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}
@@ -2546,6 +2551,7 @@ function App(){
     const next=[snap,...history].filter((g,i,a)=>i===a.findIndex(x=>(x.gameId||x.id)===(g.gameId||g.id))).slice(0,100);
     recordCompetitiveResult(snap.gameMode,"draw");
     saveLocalGame(snap);
+    if(snap.recordedInTrackRecord) recordEloGame(snap);
     setWinner(null);setDrawn(true);setDrawOffer(null);turnDeadlineRef.current=null;setTurnSecondsLeft(0);setHistory(next);setReviewGame(snap);setTab("postgame");
     void syncFinalGame(snap,null);
     try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}
@@ -3412,6 +3418,30 @@ function App(){
     </div></div>
   ):null;
   const history_analyze_render = analysisUnavailableBlock || history_analyze_block;
+  const advanced_ai_block=tab==="advanced"?(
+    <AdvancedAiPanel
+      history={history}
+      onClose={closeOverlay}
+      onOpenReplay={openHistoryAnalyze}
+      renderHeatmapBoard={({geo:heatGeo,board:heatBoard,players:heatPlayers,ports:heatPorts,scores,chosenVertex})=>(
+        <div className="advancedAiHeatmapBoard">
+          <Board
+            geo={heatGeo}
+            board={heatBoard}
+            players={heatPlayers}
+            ports={heatPorts}
+            selectedV={chosenVertex}
+            selectedE={null}
+            analysisMode={true}
+            showPlacementScores={true}
+            placementPlayer={heatPlayers.find(p=>p.id===heatPlayers[0]?.id)||heatPlayers[0]}
+            placementMode="settlement"
+            boardAnalysis={(scores||[]).map(x=>({v:x.v,score:x.score,legal:true}))}
+          />
+        </div>
+      )}
+    />
+  ):null;
   const post_block=tab==="postgame"?<div className="refOverlay"><div className="refOverlayCard"><button className="refClose" onClick={closeOverlay}>×</button><div className="refOverlayHead"><div><span className="eyebrow">MATCH REPORT</span><h2>{reviewGame?.result==="draw"?"DRAW":reviewWinner?.name||winner?.name||"MATCH REVIEW"}</h2><p>{reviewGame?`Frozen snapshot from ${fmtDate(reviewGame.date)}.` : "Current match summary."}</p></div><div className="refOverlayMetric"><span>{reviewGame?.result==="draw"?"RESULT":"FINAL SCORE"}</span><b>{reviewGame?.result==="draw"?"DRAW":`${reviewWinner?.vp??"—"} VP`}</b></div></div><div className="matchOutcomeNotice">{reviewGame?.result==="draw"?(reviewGame?.drawMessage||"Draw offer accepted — the match ended in a draw."):reviewGame?.result==="resign"?(reviewGame?.drawMessage||"Match ended by resignation."):""}</div><div className="refPostGrid">{(reviewPlayers||[]).map(p=><div key={p.id} className="refPostPlayer"><div><b>{p.name}</b><span>{p.bot?"AI":"YOU"}</span></div><strong>{p.vp} VP</strong><small>Settlements {p.settlements?.length||0} · Cities {p.cities?.length||0} · Roads {p.roads?.length||0}</small></div>)}</div><section className="refFullLogCard"><div className="refPanelTitle">COMPLETE TURN LOG <span>{(reviewGame?.logs||log).length} ENTRIES</span></div><div className="refFullLogList">{(reviewGame?.logs||log).map((x,i)=><div key={x.id||i}><b>T{x.turn}</b><p>{x.text}</p></div>)}</div></section><button className="refPrimaryButton" onClick={()=>{closeOverlay();setReviewGame(null)}}>BACK TO BOARD</button></div></div>:null;
   const devRoadDock=devChoice?.card==="Road Building"?<div className="refRoadChoiceDock"><b>ROAD BUILDING</b><span>Click up to 2 legal roads. Each selected road builds immediately.</span><strong>{devChoice.roads.length}/2</strong><div className="refRoadChoiceButtons"><button disabled={!devChoice.roads.length} onClick={()=>applyDevChoice("Road Building",[],devChoice.roads,devChoice)}>DONE</button><button onClick={()=>{if(devChoice.roads.length===0)setDevChoice(null)}}>CANCEL</button></div></div>:null;
   const actionConfirmBubble=(key)=>["draw","resign"].includes(key)&&actionConfirm?.visible&&actionConfirm.key===key?<div className="refActionConfirmBubble"><span>{actionConfirm.label}</span><div><button className="confirm" onClick={executeConfirmedAction}>CONFIRM</button><button className="cancel" onClick={cancelActionConfirm}>CANCEL</button></div></div>:null;
@@ -3565,6 +3595,7 @@ function App(){
           <button className={`hxTab ${tab==="game"||tab==="postgame"?"active":""}`} onClick={()=>setTab("game")}><Ico n="game"/><b>Game</b></button>
           <button className={`hxTab ${tab==="history"?"active":""}`} onClick={()=>setTab("history")}><Ico n="clock"/><b>History</b></button>
           <button className={`hxTab ${tab==="analysis"?"active":""}`} onClick={()=>setTab("analysis")}><Ico n="gear"/><b>Analysis</b></button>
+          <button className={`hxTab ${tab==="advanced"?"active":""}`} onClick={()=>setTab("advanced")}><Ico n="bot"/><b>AI Lab</b></button>
         </nav>
         <div className={`hxTurn ${active.bot?"bot":"human"}`}><Ico n={active.bot?"bot":"crown"}/><div><strong>{active.bot?`${active.name.toUpperCase()} IS PLAYING`:humanTitle}</strong><span>{active.bot?botSub:`${humanSub}`}</span></div></div>
         <span/>
@@ -3657,6 +3688,7 @@ function App(){
       {analysis_block}
       {history_block}
       {history_analyze_render}
+      {advanced_ai_block}
       {post_block}
       {rulesOpen&&<div className="refOverlay"><div className="refOverlayCard hxHelpCard"><button className="refClose" onClick={()=>setRulesOpen(false)}>×</button>
         <div className="refOverlayHead"><div><span className="eyebrow">QUICK REFERENCE</span><h2>HOW TO PLAY</h2><p>Roll, collect, build and trade. First to {targetVP} victory points wins.</p></div></div>

@@ -7,7 +7,8 @@ import {
   eloRows,
   personalityActionBias,
   rankMonteCarloPlacements,
-  monteCarloPlacement
+  monteCarloPlacement,
+  benchmarkPersonalitiesOnPosition
 } from "../src/advanced-ai.mjs";
 import {makeGeometry, makeBoard, newPlayer} from "./logic-core.mjs";
 
@@ -39,6 +40,10 @@ const legal=rankMonteCarloPlacements({
 });
 assert(legal.length>0,"Monte Carlo placement ranking returned no legal placements");
 assert(legal.every(x=>Number.isFinite(x.mean)&&Number.isFinite(x.p10)&&Number.isFinite(x.p90)),"Monte Carlo scores must be finite");
+const benchmark=benchmarkPersonalitiesOnPosition({board,players,geo,targetCount:3,turns:4,samples:8});
+assert.equal(benchmark.length,5,"Decision benchmark should compare all five personalities");
+assert(benchmark.every(x=>x.candidates>=0),"Benchmark rows should contain candidate counts");
+
 const single=monteCarloPlacement({
   vertex:legal[0].vertex,
   board,

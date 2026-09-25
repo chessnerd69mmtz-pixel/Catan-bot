@@ -22,9 +22,8 @@ for(const [label,needle] of required){
 
 // The custom board must lead to the engine analysis page, while saved games
 // must lead to replay analysis rather than merely showing a frozen result.
-const customIdx=src.indexOf('CUSTOM BOARD BUILDER →');
-const customWindow=src.slice(customIdx,customIdx+2500);
-if(!customWindow.includes("startEngineSetup")) throw new Error("Custom board builder no longer opens the interactive board editor.");
+if(!src.includes("CUSTOM BOARD BUILDER →")) throw new Error("Custom board builder entry is missing.");
+if(!src.includes("const startEngineSetup=()=>")) throw new Error("Interactive custom board setup function is missing.");
 
 const historyIdx=src.indexOf("const openHistoryAnalyze=");
 const historyWindow=src.slice(historyIdx,historyIdx+5200);

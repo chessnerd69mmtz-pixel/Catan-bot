@@ -3674,12 +3674,20 @@ button,select,input{font-family:inherit}
 .analysisUnavailableCard{padding:28px;border:1px solid rgba(255,193,7,.28);border-radius:14px;background:rgba(255,193,7,.05);line-height:1.55}
 .analysisUnavailableCard b{display:block;font-size:15px;color:#ffe09a}
 .analysisUnavailableCard p{margin:10px 0 0;color:rgba(255,255,255,.56);font-size:11px}
-.sandboxBoardTools .sandboxPalette{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0 10px}
-.sandboxPalette button{min-height:54px;padding:7px;border-radius:10px;border:1px solid rgba(0,246,255,.18);background:rgba(0,246,255,.035);color:#fff;cursor:grab;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
-.sandboxPalette button:active{cursor:grabbing}
+.sandboxBoardTools .sandboxPalette{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0 8px}
+.sandboxPalette button{min-height:58px;padding:7px;border-radius:10px;border:1px solid rgba(0,246,255,.18);background:rgba(0,246,255,.035);color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:.14s ease}
+.sandboxPalette button:active{cursor:grabbing;transform:translateY(0)}
 .sandboxPalette button:hover{border-color:rgba(0,246,255,.55);background:rgba(0,246,255,.08);transform:translateY(-1px)}
-.sandboxPalette button span{font-size:21px}
+.sandboxPalette button.selected{border-color:#00e5ff;background:rgba(0,229,255,.12);box-shadow:0 0 0 1px rgba(0,229,255,.12),0 0 14px rgba(0,229,255,.10);transform:translateY(-1px)}
+.sandboxPalette button span{font-size:22px}
 .sandboxPalette button b{font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.engineBrushTools{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:6px}
+.engineBrushTools button.selected{border-color:#00e5ff;color:#fff;background:rgba(0,229,255,.10);box-shadow:0 0 10px rgba(0,229,255,.08)}
+.engineNumberControl{display:grid!important;grid-template-columns:minmax(0,1fr) 96px;gap:7px;width:100%;align-items:center}
+.engineNumberControl input,.engineNumberControl select{width:100%;min-width:0!important;background:#050c1d;border:1px solid rgba(0,229,255,.22);color:#eaffff;border-radius:7px;padding:8px;font-size:10px}
+.engineNumberHint{display:block;color:#6f93a2;font-size:7px;line-height:1.35;margin-top:5px}
+.engineBoardPanel .hexTile{cursor:pointer}
+.engineBoardPanel .hexTile:hover{stroke:#8cf6ff;stroke-width:4}
 .sandboxValidation{margin-top:8px;padding:9px 10px;border-radius:9px;font-size:9px;line-height:1.4}
 .sandboxValidation.valid{border:1px solid rgba(0,255,150,.24);background:rgba(0,255,150,.05);color:#b8ffd8}
 .sandboxValidation.hasErrors{border:1px solid rgba(255,80,90,.25);background:rgba(255,80,90,.06);color:#ffd0d4}

@@ -3568,6 +3568,8 @@ button,select,input{font-family:inherit}
 .analysisHubHeader{margin-bottom:12px}
 .analysisHubHeader h2{font-size:28px;letter-spacing:.04em}
 .analysisHubControls{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;margin-bottom:12px;border:1px solid rgba(0,246,255,.18);border-radius:12px;background:linear-gradient(90deg,rgba(0,246,255,.07),rgba(161,0,255,.05))}
+.analysisHubMetricGrid{display:flex;gap:8px;align-items:stretch}.analysisHubMetricGrid .refOverlayMetric{min-width:112px}.analysisFilterRow{display:flex;gap:7px;align-items:center;margin:0 0 12px}.analysisFilterRow button{border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.035);color:rgba(255,255,255,.7);border-radius:9px;padding:8px 11px;font-size:9px;letter-spacing:.06em;font-weight:800;cursor:pointer}.analysisFilterRow button.selected{border-color:rgba(0,246,255,.58);background:rgba(0,246,255,.1);color:#fff;box-shadow:0 0 16px rgba(0,246,255,.08)}.analysisMatchType{display:inline-block;margin-right:6px;padding:2px 5px;border:1px solid rgba(0,246,255,.25);border-radius:5px;color:#72eaff;font-size:8px;letter-spacing:.08em}@media(max-width:620px){.analysisHubMetricGrid{width:100%;flex-wrap:wrap}.analysisFilterRow{flex-wrap:wrap}}
+
 .analysisHubControls div{display:flex;flex-direction:column;gap:4px}
 .analysisHubControls span{font-size:10px;color:rgba(255,255,255,.58)}
 .analysisHistoryList{display:grid;gap:10px}

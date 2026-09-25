@@ -37,8 +37,17 @@ jobs:
       - name: Verify source syntax and types
         run: npx tsc --allowJs --jsx react-jsx --checkJs false --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler src/main.jsx
 
-      - name: Verify gameplay regressions
-        run: npm run verify
+      - name: Run core test suite
+        run: npm test
+
+      - name: Run gameplay regression suite
+        run: node tests/run-all-regressions.mjs
+
+      - name: Run final feature audit
+        run: npm run audit
+
+      - name: Run performance benchmark
+        run: npm run perf
 
       - name: Build production bundle
         run: npm run build

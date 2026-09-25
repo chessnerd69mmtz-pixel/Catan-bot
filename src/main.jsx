@@ -2559,7 +2559,7 @@ function App(){
   };
   const removeEnginePiece=(kind,id)=>{setEnginePlayers(ps=>ps.map(p=>p.id===engineActive?{...p,[kind]:p[kind].filter(x=>x!==id)}:p));setEngineSelectedPiece(null);};
   const runEngineAnalysis=()=>setEngineAnalysis(true);
-  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers(enginePlayerCount));setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(enginePlayerCount===2?15:10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
+  const resetEngineState=()=>{setEnginePlayers(makeEnginePlayers(enginePlayerCount));setEngineBoard(makeEngineBoard(geo,mapSettings));setEnginePorts(makePorts(geo));setEngineBank(emptyBank());setEngineDeck(devDeck());setEngineActive(0);setEngineStage("action");setEngineSelectedTile(null);setEngineTerrain(null);setEngineNumber("");setEngineSelectedPiece(null);setEnginePieceMode("inspect");setEngineTargetVP(enginePlayerCount===2?15:10);setEngineHeldAwards({roadOwner:null,armyOwner:null});setEngineDevCounts({...DEV});setEngineAnalysis(false);};
 
   const engineBoardErrors=useMemo(()=>{if(!engineBoard)return [];const errors=[];engineBoard.forEach((t,i)=>{if(!t?.resource)errors.push(`Hex ${i+1}: resource required`);else if(t.resource!=="desert"&&(!Number.isInteger(Number(t.number))||Number(t.number)<2||Number(t.number)>12||Number(t.number)===7))errors.push(`Hex ${i+1}: valid number token required (2-12, not 7)`);});if(!engineBoard.some(t=>t?.resource==="desert"))errors.push("At least one desert is required.");return errors;},[engineBoard]);
   const engineDropTile=(tid,resource)=>{
@@ -2567,7 +2567,6 @@ function App(){
     const nextNumber=resource==="desert"?null:(engineBoard[tid]?.number&&engineBoard[tid].number!==7?engineBoard[tid].number:6);
     engineSetTile(tid,{resource,number:nextNumber,robber:resource==="desert"?!!engineBoard[tid]?.robber:false});
     setEngineSelectedTile(tid);
-    setEngineTerrain(null);
     setEngineNumber(nextNumber??"");
   };
   const clearEngineTile=(tid)=>{

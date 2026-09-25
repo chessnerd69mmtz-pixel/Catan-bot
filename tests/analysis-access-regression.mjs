@@ -14,6 +14,10 @@ const required=[
   ["bot-match analysis filter", 'setAnalysisHistoryFilter("bot")'],
   ["bot-match detection", '(g.players||[]).some(p=>p.bot)'],
   ["completed games preserve analysis frames", "analysisFrames:clone(analysisFramesRef.current)"],
+  ["click-to-paint board brush", 'onClick={()=>setEngineTerrain(current=>current===r?null:r)}'],
+  ["manual number draft", 'onChange={e=>setEngineNumber(e.target.value)}'],
+  ["number token dropdown", 'aria-label="Choose number token"'],
+  ["pick/edit tile tool", "PICK / EDIT TILE"],
 ];
 
 for(const [label,needle] of required){

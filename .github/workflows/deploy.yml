@@ -37,8 +37,20 @@ jobs:
       - name: Verify source syntax and types
         run: npx tsc --allowJs --jsx react-jsx --checkJs false --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler src/main.jsx
 
-      - name: Run core test suite
-        run: npm test
+      - name: Run core logic tests
+        run: node tests/run-tests.mjs
+
+      - name: Run analysis engine tests
+        run: node tests/analysis-engine-test.mjs
+
+      - name: Run learning engine tests
+        run: node tests/learning-engine-test.mjs
+
+      - name: Run analysis access tests
+        run: node tests/analysis-access-regression.mjs
+
+      - name: Run advanced AI tests
+        run: node tests/advanced-ai-test.mjs
 
       - name: Run gameplay regression suite
         run: node tests/run-all-regressions.mjs
